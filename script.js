@@ -1,7 +1,7 @@
 // Discord OAuth2 Configuration - USE YOUR VALUES
 const CLIENT_ID = '1450008731692568729';
 const REDIRECT_URI = 'https://discordactivity.netlify.app';
-const SCOPES = ['identify', 'activities.write']; // ONLY THESE TWO SCOPES
+const SCOPES = ['identify', 'rpc.activities.write']; // ONLY THESE TWO SCOPES
 
 // DOM Elements
 const elements = {
@@ -155,7 +155,7 @@ function startOAuthFlow() {
     authUrl.searchParams.append('scope', SCOPES.join(' '));
     
     // Optional but recommended
-    authUrl.searchParams.append('prompt', 'consent');
+    authUrl.searchParams.append('scope', 'identify rpc.activities.write');
     
     console.log('Redirecting to:', authUrl.toString());
     
@@ -433,3 +433,4 @@ window.debugApp = function() {
     console.log('URL Hash:', window.location.hash);
     console.log('=====================');
 };
+
