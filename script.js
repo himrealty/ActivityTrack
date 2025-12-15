@@ -1,5 +1,5 @@
 // Discord OAuth2 Configuration
-const CLIENT_ID = 'YOUR_CLIENT_ID_HERE'; // Get from Discord Developer Portal
+const CLIENT_ID = '1450008731692568729'; // Get from Discord Developer Portal
 const REDIRECT_URI = window.location.origin + window.location.pathname;
 const SCOPES = ['identify', 'activities.write']; // activities.write is KEY
 
@@ -352,4 +352,5 @@ function logout() {
     elements.authSection.classList.remove('hidden');
     elements.controlsSection.classList.add('hidden');
     showStatus('Logged out successfully', 'success');
+
 }
