@@ -1,18 +1,14 @@
-// Discord OAuth2 Configuration
-const CLIENT_ID = '1450008731692568729'; // Get from Discord Developer Portal
+// Discord OAuth2 Configuration - USE YOUR VALUES
+const CLIENT_ID = '1450008731692568729';
 const REDIRECT_URI = 'https://discordactivity.netlify.app';
-const SCOPES = ['identify', 'activities.write']; // activities.write is KEY
-
-// Token storage
-let accessToken = localStorage.getItem('discord_access_token');
-let refreshToken = localStorage.getItem('discord_refresh_token');
-let tokenExpiry = localStorage.getItem('discord_token_expiry');
+const SCOPES = ['identify', 'activities.write']; // ONLY THESE TWO SCOPES
 
 // DOM Elements
 const elements = {
     authSection: document.getElementById('auth-section'),
     controlsSection: document.getElementById('controls-section'),
     loginBtn: document.getElementById('login-btn'),
+    logoutBtn: document.getElementById('logout-btn'),
     authStatus: document.getElementById('auth-status'),
     statusMessage: document.getElementById('status-message'),
     updateBtn: document.getElementById('update-btn'),
@@ -31,124 +27,155 @@ const elements = {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    // Check for OAuth callback
-    const hash = window.location.hash.substring(1);
-    const params = new URLSearchParams(hash);
+    console.log('App initializing...');
     
-    if (params.has('access_token')) {
-        handleOAuthCallback(params);
-    } else if (accessToken && tokenExpiry && Date.now() < tokenExpiry) {
-        // Already logged in with valid token
-        showControls();
-    } else if (accessToken) {
-        // Token might be expired, try to refresh
-        refreshAccessToken();
-    }
+    // Check if we're returning from OAuth with a token
+    handleOAuthRedirect();
+    
+    // Check if we already have a valid token
+    checkExistingToken();
     
     setupEventListeners();
 });
 
-// Setup event listeners
-function setupEventListeners() {
-    elements.loginBtn.addEventListener('click', startOAuthFlow);
-    elements.updateBtn.addEventListener('click', updatePresence);
-    elements.clearBtn.addEventListener('click', clearPresence);
+// Handle OAuth redirect - THIS IS THE KEY FUNCTION
+function handleOAuthRedirect() {
+    console.log('Checking URL for OAuth response...');
+    console.log('Full URL:', window.location.href);
+    console.log('Hash:', window.location.hash);
     
-    elements.timestampType.addEventListener('change', () => {
-        elements.countdownGroup.classList.toggle('hidden', 
-            elements.timestampType.value !== 'end');
-        updatePreview();
-    });
+    // Check for token in URL hash (response_type=token flow)
+    if (window.location.hash.includes('access_token')) {
+        console.log('Found access token in URL hash!');
+        
+        try {
+            // Parse the hash parameters
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            
+            const accessToken = params.get('access_token');
+            const tokenType = params.get('token_type');
+            const expiresIn = params.get('expires_in');
+            
+            console.log('Token received! Type:', tokenType, 'Expires in:', expiresIn, 'seconds');
+            
+            if (accessToken) {
+                // Store the token
+                localStorage.setItem('discord_access_token', accessToken);
+                localStorage.setItem('discord_token_expiry', 
+                    Date.now() + (parseInt(expiresIn || 604800) * 1000));
+                
+                // Clear the URL hash
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+                console.log('Token saved successfully!');
+                
+                // Show success and controls
+                showStatus('Successfully connected to Discord!', 'success');
+                showControls();
+                
+                return true;
+            }
+        } catch (error) {
+            console.error('Error parsing OAuth response:', error);
+            showStatus('Error processing authorization. Please try again.', 'error');
+        }
+    }
     
-    // Real-time preview updates
-    ['activityName', 'details', 'state', 'countdown'].forEach(id => {
-        document.getElementById(id).addEventListener('input', updatePreview);
-    });
+    // Check for errors
+    if (window.location.hash.includes('error')) {
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        const error = params.get('error');
+        const errorDesc = params.get('error_description');
+        
+        console.error('OAuth error:', error, '-', errorDesc);
+        showStatus(`Authorization failed: ${errorDesc || error}`, 'error');
+        
+        // Clear the URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    
+    return false;
 }
 
-// Start OAuth2 Flow
-function startOAuthFlow() {
-    const authUrl = new URL('https://discord.com/api/oauth2/authorize');
-    authUrl.searchParams.append('client_id', CLIENT_ID);
-    authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
-    authUrl.searchParams.append('response_type', 'token');
-    authUrl.searchParams.append('scope', SCOPES.join(' '));
-    authUrl.searchParams.append('prompt', 'consent');
+// Check if we already have a valid token
+async function checkExistingToken() {
+    const accessToken = localStorage.getItem('discord_access_token');
+    const tokenExpiry = localStorage.getItem('discord_token_expiry');
     
-    window.location.href = authUrl.toString();
-}
-
-// Handle OAuth callback
-function handleOAuthCallback(params) {
-    accessToken = params.get('access_token');
-    refreshToken = params.get('refresh_token');
-    const expiresIn = parseInt(params.get('expires_in')) * 1000;
-    tokenExpiry = Date.now() + expiresIn;
-    
-    // Store tokens
-    localStorage.setItem('discord_access_token', accessToken);
-    localStorage.setItem('discord_refresh_token', refreshToken);
-    localStorage.setItem('discord_token_expiry', tokenExpiry);
-    
-    // Clear URL hash
-    window.history.replaceState({}, document.title, window.location.pathname);
-    
-    showStatus('Successfully connected to Discord!', 'success');
-    showControls();
-}
-
-// Refresh access token
-async function refreshAccessToken() {
-    if (!refreshToken) {
-        showStatus('Session expired. Please reconnect.', 'error');
+    if (!accessToken) {
+        console.log('No existing token found');
         return;
     }
     
+    // Check if token is expired
+    if (tokenExpiry && Date.now() > parseInt(tokenExpiry)) {
+        console.log('Token expired');
+        localStorage.removeItem('discord_access_token');
+        showAuth();
+        return;
+    }
+    
+    console.log('Found existing token, validating...');
+    
+    // Try to validate the token with a simple API call
     try {
-        const response = await fetch('https://discord.com/api/oauth2/token', {
-            method: 'POST',
+        const response = await fetch('https://discord.com/api/v9/users/@me', {
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                client_id: CLIENT_ID,
-                client_secret: 'R0atQJ5kyJcaXh9FtFgNYAj1IIrnm1DJ', // From Discord Dev Portal
-                grant_type: 'refresh_token',
-                refresh_token: refreshToken
-            })
+                'Authorization': `Bearer ${accessToken}`
+            }
         });
         
         if (response.ok) {
-            const data = await response.json();
-            accessToken = data.access_token;
-            refreshToken = data.refresh_token;
-            tokenExpiry = Date.now() + (data.expires_in * 1000);
-            
-            localStorage.setItem('discord_access_token', accessToken);
-            localStorage.setItem('discord_refresh_token', refreshToken);
-            localStorage.setItem('discord_token_expiry', tokenExpiry);
-            
+            console.log('Existing token is valid');
             showControls();
         } else {
-            throw new Error('Token refresh failed');
+            console.log('Existing token invalid');
+            localStorage.removeItem('discord_access_token');
+            showAuth();
         }
     } catch (error) {
-        console.error('Refresh failed:', error);
-        showStatus('Session expired. Please reconnect.', 'error');
-        clearTokens();
+        console.error('Error validating token:', error);
+        showAuth();
     }
 }
 
-// Update Discord Presence via REST API
+// Start OAuth2 Flow - CORRECT IMPLEMENTATION
+function startOAuthFlow() {
+    console.log('Starting OAuth flow...');
+    
+    // Build the authorization URL - MUST use response_type=token
+    const authUrl = new URL('https://discord.com/api/oauth2/authorize');
+    
+    // REQUIRED parameters
+    authUrl.searchParams.append('client_id', CLIENT_ID);
+    authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
+    authUrl.searchParams.append('response_type', 'token'); // MUST be 'token' for client-side
+    authUrl.searchParams.append('scope', SCOPES.join(' '));
+    
+    // Optional but recommended
+    authUrl.searchParams.append('prompt', 'consent');
+    
+    console.log('Redirecting to:', authUrl.toString());
+    
+    // Redirect to Discord authorization
+    window.location.href = authUrl.toString();
+}
+
+// Update Discord Presence
 async function updatePresence() {
+    const accessToken = localStorage.getItem('discord_access_token');
+    
     if (!accessToken) {
-        showStatus('Not authenticated. Please connect first.', 'error');
+        showStatus('Not connected to Discord. Please connect first.', 'error');
         return;
     }
     
     try {
         // Prepare presence data
         const presenceData = createPresenceData();
+        console.log('Updating presence with:', presenceData);
         
         // Make API request to update presence
         const response = await fetch('https://discord.com/api/v9/users/@me/activities', {
@@ -160,31 +187,30 @@ async function updatePresence() {
             body: JSON.stringify(presenceData)
         });
         
+        console.log('API Response status:', response.status);
+        
         if (response.ok) {
-            showStatus('✓ Presence updated successfully!', 'success');
+            const result = await response.json();
+            console.log('Presence update successful!');
+            showStatus('✅ Rich Presence updated successfully! Check your Discord status.', 'success');
             
             // Show preview
             elements.presencePreview.classList.remove('hidden');
             updatePreview();
             
-            // Also update via RPC for real-time updates (if available)
-            try {
-                await updateViaRPC(presenceData);
-            } catch (rpcError) {
-                // RPC is optional, API already worked
-            }
-            
         } else if (response.status === 401) {
-            // Token expired, try to refresh
-            await refreshAccessToken();
-            await updatePresence(); // Retry
+            // Token expired or invalid
+            showStatus('Session expired. Please reconnect.', 'error');
+            localStorage.removeItem('discord_access_token');
+            showAuth();
         } else {
-            const error = await response.json();
-            throw new Error(error.message || 'Failed to update presence');
+            const errorText = await response.text();
+            console.error('API Error response:', errorText);
+            showStatus(`Failed to update: ${response.status} - Check console for details`, 'error');
         }
     } catch (error) {
         console.error('Update failed:', error);
-        showStatus(`Error: ${error.message}`, 'error');
+        showStatus(`Network error: ${error.message}`, 'error');
     }
 }
 
@@ -197,19 +223,18 @@ function createPresenceData() {
     // Build presence object
     const presence = {
         name: activityName,
-        type: 0, // 0 = Playing, 1 = Streaming, 2 = Listening, 3 = Watching
-        application_id: CLIENT_ID,
+        type: 0, // 0 = Playing
         details: details,
         state: state,
         timestamps: {},
         assets: {
-            large_image: 'default_large', // You can customize these
+            large_image: 'default_large',
             large_text: activityName
         },
         buttons: [
             {
-                label: 'Powered by Presence Manager',
-                url: window.location.href
+                label: 'Set via Discord Activity',
+                url: 'https://discordactivity.netlify.app'
             }
         ]
     };
@@ -228,9 +253,14 @@ function createPresenceData() {
     return presence;
 }
 
-// Clear presence (set to nothing)
+// Clear presence
 async function clearPresence() {
-    if (!accessToken) return;
+    const accessToken = localStorage.getItem('discord_access_token');
+    
+    if (!accessToken) {
+        showStatus('Not connected to Discord.', 'error');
+        return;
+    }
     
     try {
         const response = await fetch('https://discord.com/api/v9/users/@me/activities', {
@@ -241,7 +271,7 @@ async function clearPresence() {
         });
         
         if (response.ok) {
-            showStatus('✓ Presence cleared', 'success');
+            showStatus('✅ Presence cleared', 'success');
             elements.presencePreview.classList.add('hidden');
             
             // Clear form
@@ -249,109 +279,157 @@ async function clearPresence() {
             elements.state.value = '';
             
         } else if (response.status === 401) {
-            await refreshAccessToken();
-            await clearPresence();
+            showStatus('Session expired. Please reconnect.', 'error');
+            localStorage.removeItem('discord_access_token');
+            showAuth();
+        } else {
+            showStatus(`Failed to clear: ${response.status}`, 'error');
         }
     } catch (error) {
-        showStatus(`Error clearing: ${error.message}`, 'error');
+        showStatus(`Error: ${error.message}`, 'error');
     }
 }
 
-// Optional: Try to update via WebSocket RPC for instant updates
-async function updateViaRPC(presenceData) {
-    // This is the fallback for instant updates in Discord desktop
-    // It's optional but provides better UX
-    return new Promise((resolve, reject) => {
-        if (!window.DiscordRPC) {
-            reject(new Error('RPC not available'));
-            return;
-        }
-        
-        const client = new window.DiscordRPC.Client({ transport: 'websocket' });
-        
-        client.on('ready', async () => {
-            try {
-                await client.setActivity(presenceData);
-                client.destroy();
-                resolve();
-            } catch (error) {
-                reject(error);
-            }
-        });
-        
-        client.login({ clientId: CLIENT_ID }).catch(reject);
-        
-        // Timeout after 5 seconds
-        setTimeout(() => {
-            client.destroy();
-            reject(new Error('RPC timeout'));
-        }, 5000);
-    });
+// Load sample configuration
+function loadSample() {
+    elements.activityName.value = 'Rich Presence Manager';
+    elements.details.value = 'Customizing Discord Status';
+    elements.state.value = 'via Discord Activity';
+    elements.timestampType.value = 'start';
+    
+    updatePreview();
+    showStatus('Sample loaded. Click "Update Presence" to apply.', 'success');
 }
 
 // Update preview display
 function updatePreview() {
     const presence = createPresenceData();
     let previewHTML = `
-        <strong>${presence.name}</strong><br>
-        ${presence.details ? `Details: ${presence.details}<br>` : ''}
-        ${presence.state ? `State: ${presence.state}<br>` : ''}
+        <div style="margin-bottom: 10px;"><strong>${presence.name}</strong></div>
     `;
     
+    if (presence.details) {
+        previewHTML += `<div>📝 ${presence.details}</div>`;
+    }
+    
+    if (presence.state) {
+        previewHTML += `<div>🔹 ${presence.state}</div>`;
+    }
+    
     if (presence.timestamps.start) {
-        previewHTML += `Started: ${formatTime(presence.timestamps.start)}<br>`;
+        previewHTML += `<div>🕒 Started just now</div>`;
     } else if (presence.timestamps.end) {
-        previewHTML += `Ends: ${formatTime(presence.timestamps.end)} (${Math.round((presence.timestamps.end - Math.floor(Date.now() / 1000)) / 60)}min)<br>`;
+        const minutesLeft = Math.round((presence.timestamps.end - Math.floor(Date.now() / 1000)) / 60);
+        previewHTML += `<div>⏱️ ${minutesLeft} minutes remaining</div>`;
     }
     
     elements.previewContent.innerHTML = previewHTML;
 }
 
-// Format timestamp
-function formatTime(timestamp) {
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-// Show/hide controls
+// UI Functions
 function showControls() {
+    console.log('Showing controls');
     elements.authSection.classList.add('hidden');
     elements.controlsSection.classList.remove('hidden');
     
-    // Load sample data
-    elements.activityName.value = 'Custom Activity';
-    elements.details.value = 'Setting up presence...';
-    elements.state.value = 'via Presence Manager';
+    // Load default/sample data
+    if (!elements.activityName.value) {
+        elements.activityName.value = 'Custom Activity';
+    }
+    if (!elements.details.value) {
+        elements.details.value = 'Setting up presence...';
+    }
+    if (!elements.state.value) {
+        elements.state.value = 'via Discord Activity';
+    }
     
     updatePreview();
 }
 
-// Show status message
+function showAuth() {
+    console.log('Showing auth screen');
+    elements.authSection.classList.remove('hidden');
+    elements.controlsSection.classList.add('hidden');
+}
+
 function showStatus(message, type) {
     elements.statusMessage.textContent = message;
     elements.statusMessage.className = `status ${type}`;
     elements.statusMessage.classList.remove('hidden');
     
-    setTimeout(() => {
-        elements.statusMessage.classList.add('hidden');
-    }, 5000);
+    // Auto-hide after 5 seconds (except errors)
+    if (type !== 'error') {
+        setTimeout(() => {
+            elements.statusMessage.classList.add('hidden');
+        }, 5000);
+    }
 }
 
-// Clear stored tokens
-function clearTokens() {
-    localStorage.removeItem('discord_access_token');
-    localStorage.removeItem('discord_refresh_token');
-    localStorage.removeItem('discord_token_expiry');
-    accessToken = null;
-    refreshToken = null;
-}
-
-// Logout function (optional)
+// Logout function
 function logout() {
-    clearTokens();
-    elements.authSection.classList.remove('hidden');
-    elements.controlsSection.classList.add('hidden');
+    localStorage.removeItem('discord_access_token');
+    localStorage.removeItem('discord_token_expiry');
     showStatus('Logged out successfully', 'success');
-
+    showAuth();
 }
 
+// Setup event listeners
+function setupEventListeners() {
+    // Login button
+    if (elements.loginBtn) {
+        elements.loginBtn.addEventListener('click', startOAuthFlow);
+    }
+    
+    // Logout button
+    if (elements.logoutBtn) {
+        elements.logoutBtn.addEventListener('click', logout);
+    }
+    
+    // Update presence button
+    if (elements.updateBtn) {
+        elements.updateBtn.addEventListener('click', updatePresence);
+    }
+    
+    // Clear presence button
+    if (elements.clearBtn) {
+        elements.clearBtn.addEventListener('click', clearPresence);
+    }
+    
+    // Sample button (if exists)
+    const sampleBtn = document.getElementById('sample-btn');
+    if (sampleBtn) {
+        sampleBtn.addEventListener('click', loadSample);
+    }
+    
+    // Form input listeners for real-time preview
+    if (elements.timestampType) {
+        elements.timestampType.addEventListener('change', () => {
+            if (elements.countdownGroup) {
+                elements.countdownGroup.classList.toggle('hidden', 
+                    elements.timestampType.value !== 'end');
+            }
+            updatePreview();
+        });
+    }
+    
+    // Real-time preview updates
+    const inputs = ['activityName', 'details', 'state', 'countdown'];
+    inputs.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('input', updatePreview);
+        }
+    });
+}
+
+// Debug helper
+window.debugApp = function() {
+    console.log('=== APP DEBUG INFO ===');
+    console.log('Client ID:', CLIENT_ID);
+    console.log('Redirect URI:', REDIRECT_URI);
+    console.log('Scopes:', SCOPES);
+    console.log('Stored Token:', localStorage.getItem('discord_access_token') ? 'YES' : 'NO');
+    console.log('Current URL:', window.location.href);
+    console.log('URL Hash:', window.location.hash);
+    console.log('=====================');
+};
