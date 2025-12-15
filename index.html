@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Presence Manager</title>
+    <style>
+        :root {
+            --discord-blurple: #5865F2;
+            --discord-green: #57F287;
+            --discord-dark: #2C2F33;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: var(--discord-dark);
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .auth-section {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        
+        button {
+            background: var(--discord-blurple);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            opacity: 0.9;
+        }
+        
+        .presence-preview {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .success { background: rgba(87,242,135,0.2); }
+        .error { background: rgba(237,66,69,0.2); }
+        
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Discord Presence Manager</h1>
+        <p>Update your Discord Rich Presence from ANY platform</p>
+        
+        <!-- Authentication Section -->
+        <div id="auth-section" class="auth-section">
+            <h3>Step 1: Connect to Discord</h3>
+            <p>Click below to authorize this app to update your Discord status:</p>
+            <button id="login-btn">Connect to Discord</button>
+            <div id="auth-status" class="status hidden"></div>
+        </div>
+        
+        <!-- Presence Controls (Initially Hidden) -->
+        <div id="controls-section" class="hidden">
+            <h3>Step 2: Customize Your Presence</h3>
+            
+            <div class="form-group">
+                <label>Activity Name:</label>
+                <input type="text" id="activity-name" placeholder="Playing a game">
+            </div>
+            
+            <div class="form-group">
+                <label>Details:</label>
+                <input type="text" id="details" placeholder="In the main menu">
+            </div>
+            
+            <div class="form-group">
+                <label>State:</label>
+                <input type="text" id="state" placeholder="Level 100">
+            </div>
+            
+            <div class="form-group">
+                <label>Timestamp:</label>
+                <select id="timestamp-type">
+                    <option value="none">No timestamp</option>
+                    <option value="start">Start Time (now)</option>
+                    <option value="end">End Time (countdown)</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="countdown-group">
+                <label>Countdown (minutes):</label>
+                <input type="number" id="countdown" value="60" min="1" max="240">
+            </div>
+            
+            <button id="update-btn">Update Presence</button>
+            <button id="clear-btn" style="background: #ED4245;">Clear Presence</button>
+            
+            <div id="presence-preview" class="presence-preview hidden">
+                <h4>Preview:</h4>
+                <div id="preview-content"></div>
+            </div>
+        </div>
+        
+        <div id="status-message" class="status hidden"></div>
+        
+        <div class="platform-info">
+            <h4>✓ Works on:</h4>
+            <ul>
+                <li>Discord Web (discord.com)</li>
+                <li>Discord Desktop App</li>
+                <li>Discord Mobile App</li>
+                <li>Any web browser</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
