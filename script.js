@@ -1,7 +1,7 @@
-// Discord OAuth2 Configuration - CORRECT SCOPES
+// Discord OAuth2 Configuration
 const CLIENT_ID = '1450008731692568729';
 const REDIRECT_URI = 'https://discordactivity.netlify.app';
-const SCOPES = ['identify', 'rpc', 'rpc.activities.write']; // REQUIRES 'rpc' as base scope
+const SCOPES = ['identify', 'rpc', 'rpc.activities.write'];
 
 // DOM Elements
 const elements = {
@@ -9,7 +9,6 @@ const elements = {
     controlsSection: document.getElementById('controls-section'),
     loginBtn: document.getElementById('login-btn'),
     logoutBtn: document.getElementById('logout-btn'),
-    authStatus: document.getElementById('auth-status'),
     statusMessage: document.getElementById('status-message'),
     updateBtn: document.getElementById('update-btn'),
     clearBtn: document.getElementById('clear-btn'),
@@ -24,134 +23,133 @@ const elements = {
     countdown: document.getElementById('countdown')
 };
 
-// Initialize app
+// Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('Discord Presence Manager Initializing...');
+    console.log('🔄 App initializing...');
     
-    // First, handle any OAuth redirect
-    const handledRedirect = handleOAuthRedirect();
-    
-    // If not handling a redirect, check for existing session
-    if (!handledRedirect) {
-        checkExistingSession();
+    // First check if we have a token in URL (OAuth callback)
+    if (window.location.hash.includes('access_token')) {
+        handleOAuthCallback();
+    } else {
+        // Check for existing valid token
+        checkExistingToken();
     }
     
     setupEventListeners();
-    console.log('App initialized. Stored token:', localStorage.getItem('discord_access_token') ? 'YES' : 'NO');
 });
 
-// Handle OAuth redirect with token
-function handleOAuthRedirect() {
-    console.log('Checking for OAuth redirect...');
+// Handle OAuth callback
+function handleOAuthCallback() {
+    console.log('📥 Handling OAuth callback...');
     
-    // Check URL hash for access token
-    if (window.location.hash) {
-        console.log('URL hash found:', window.location.hash);
+    try {
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
         
-        try {
-            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = params.get('access_token');
+        const expiresIn = params.get('expires_in') || '604800';
+        
+        if (accessToken) {
+            console.log('✅ Got access token!');
             
-            if (hashParams.has('access_token')) {
-                const accessToken = hashParams.get('access_token');
-                const expiresIn = hashParams.get('expires_in') || '604800';
-                
-                console.log('✅ Access token received!');
-                
-                // Store the token
-                localStorage.setItem('discord_access_token', accessToken);
-                localStorage.setItem('discord_token_expiry', 
-                    Date.now() + (parseInt(expiresIn) * 1000));
-                
-                // Clear URL hash (clean up the URL)
-                window.history.replaceState({}, document.title, window.location.pathname);
-                
-                showStatus('Successfully connected to Discord!', 'success');
-                showControls();
-                
-                return true;
-            }
+            // Store token
+            localStorage.setItem('discord_access_token', accessToken);
+            localStorage.setItem('discord_token_expiry', 
+                Date.now() + (parseInt(expiresIn) * 1000));
             
-            if (hashParams.has('error')) {
-                const error = hashParams.get('error');
-                const errorDesc = hashParams.get('error_description');
-                console.error('❌ OAuth Error:', error, '-', errorDesc);
-                showStatus(`Authorization failed: ${errorDesc || error}`, 'error');
-                
-                window.history.replaceState({}, document.title, window.location.pathname);
-                return false;
-            }
+            // Clear URL hash
+            window.history.replaceState({}, document.title, window.location.pathname);
             
-        } catch (error) {
-            console.error('Error parsing OAuth response:', error);
-            showStatus('Error processing authorization', 'error');
+            showStatus('✅ Successfully connected to Discord!', 'success');
+            showControls();
+            
+            // Test the token immediately
+            testToken(accessToken);
         }
+        
+        if (params.has('error')) {
+            const error = params.get('error');
+            const errorDesc = params.get('error_description');
+            console.error('❌ OAuth Error:', error, '-', errorDesc);
+            showStatus(`Authorization failed: ${errorDesc || error}`, 'error');
+        }
+        
+    } catch (error) {
+        console.error('Error processing OAuth:', error);
+        showStatus('Error processing authorization', 'error');
     }
-    
-    return false;
 }
 
-// Check for existing valid session
-async function checkExistingSession() {
+// Test if token works
+async function testToken(accessToken) {
+    try {
+        console.log('🧪 Testing token validity...');
+        const response = await fetch('https://discord.com/api/v9/users/@me', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        
+        if (response.ok) {
+            console.log('✅ Token is valid!');
+        } else {
+            console.warn('⚠️ Token might be invalid:', response.status);
+        }
+    } catch (error) {
+        console.error('Token test failed:', error);
+    }
+}
+
+// Check existing token
+async function checkExistingToken() {
     const accessToken = localStorage.getItem('discord_access_token');
     const tokenExpiry = localStorage.getItem('discord_token_expiry');
     
     if (!accessToken) {
-        console.log('No existing session found');
+        console.log('No existing token');
         return;
     }
     
-    // Check if token is expired
-    const isExpired = tokenExpiry && Date.now() > parseInt(tokenExpiry);
-    if (isExpired) {
-        console.log('Session expired');
-        localStorage.removeItem('discord_access_token');
-        localStorage.removeItem('discord_token_expiry');
+    // Check expiry
+    if (tokenExpiry && Date.now() > parseInt(tokenExpiry)) {
+        console.log('Token expired');
+        clearLocalStorage();
         return;
     }
     
-    // Validate token with Discord API
+    console.log('Found existing token, checking validity...');
+    
     try {
         const response = await fetch('https://discord.com/api/v9/users/@me', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         
         if (response.ok) {
-            console.log('✅ Existing session is valid');
+            console.log('✅ Existing token is valid');
             showControls();
         } else {
-            console.log('❌ Session invalid, clearing...');
+            console.log('❌ Token invalid');
             clearLocalStorage();
         }
     } catch (error) {
-        console.error('Error validating session:', error);
-        // Don't clear on network errors
+        console.error('Error checking token:', error);
     }
 }
 
-// Start OAuth2 authorization - CORRECT SCOPE
+// Start OAuth flow
 function startOAuthFlow() {
-    console.log('🔗 Starting OAuth authorization...');
+    console.log('🔗 Starting OAuth...');
     
-    // Build authorization URL with CORRECT scopes
     const authUrl = new URL('https://discord.com/api/oauth2/authorize');
-    
-    // REQUIRED parameters
     authUrl.searchParams.append('client_id', CLIENT_ID);
     authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
-    authUrl.searchParams.append('response_type', 'token'); // Implicit grant flow
-    authUrl.searchParams.append('scope', 'identify rpc rpc.activities.write'); // CORRECT SCOPES
-    
-    // Optional parameters
+    authUrl.searchParams.append('response_type', 'token');
+    authUrl.searchParams.append('scope', 'identify rpc rpc.activities.write');
     authUrl.searchParams.append('prompt', 'consent');
     
     console.log('OAuth URL:', authUrl.toString());
-    console.log('Requesting scopes: identify, rpc, rpc.activities.write');
-    
-    // Redirect to Discord
     window.location.href = authUrl.toString();
 }
 
-// Update Discord Rich Presence
+// UPDATE DISCORD PRESENCE - CORRECTED API CALL
 async function updatePresence() {
     const accessToken = localStorage.getItem('discord_access_token');
     
@@ -160,12 +158,131 @@ async function updatePresence() {
         return;
     }
     
-    // Get presence data from form
+    console.log('🔄 Updating presence...');
+    
+    // Get presence data
     const presenceData = createPresenceData();
-    console.log('Updating presence:', presenceData);
+    console.log('Presence data:', presenceData);
     
     try {
-        // Make API request
+        // CRITICAL FIX: Use the CORRECT Discord API endpoint
+        // The endpoint for updating user activities has changed
+        const response = await fetch('https://discord.com/api/v9/users/@me/settings', {
+            method: 'PATCH',  // Changed from POST to PATCH
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                custom_status: {
+                    text: presenceData.details || 'Using Discord Activity',
+                    emoji_name: '🎮'
+                }
+            })
+        });
+        
+        console.log('📡 API Response:', response.status, response.statusText);
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log('✅ Presence updated:', result);
+            
+            // ALSO try the activities endpoint (for richer presence)
+            try {
+                await updateRichPresence(accessToken, presenceData);
+            } catch (richError) {
+                console.log('Rich presence update failed, but basic status set');
+            }
+            
+            showStatus('✅ Status updated! Check your Discord profile.', 'success');
+            updatePreview();
+            elements.presencePreview.classList.remove('hidden');
+            
+        } else if (response.status === 401) {
+            showStatus('Session expired. Please reconnect.', 'error');
+            clearLocalStorage();
+            showAuth();
+        } else {
+            const errorText = await response.text();
+            console.error('❌ API Error:', errorText);
+            showStatus(`Failed: ${response.status}. Trying alternative method...`, 'error');
+            
+            // Try alternative method
+            await tryAlternativePresenceMethod(accessToken, presenceData);
+        }
+        
+    } catch (error) {
+        console.error('🌐 Network error:', error);
+        
+        // Show helpful error message
+        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+            showStatus('Cannot connect to Discord API. Check if you have CORS issues or try a different browser.', 'error');
+        } else {
+            showStatus(`Network error: ${error.message}`, 'error');
+        }
+    }
+}
+
+// Alternative method for setting presence
+async function tryAlternativePresenceMethod(accessToken, presenceData) {
+    console.log('Trying alternative presence method...');
+    
+    try {
+        // Method 1: Set activity via activities endpoint
+        const activityResponse = await fetch('https://discord.com/api/v9/users/@me/activities', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                activities: [{
+                    name: presenceData.name,
+                    type: presenceData.type,
+                    details: presenceData.details,
+                    state: presenceData.state,
+                    timestamps: presenceData.timestamps,
+                    assets: presenceData.assets
+                }],
+                status: 'online',
+                afk: false
+            })
+        });
+        
+        if (activityResponse.ok) {
+            console.log('✅ Alternative method worked!');
+            showStatus('✅ Presence updated via alternative method!', 'success');
+            return true;
+        }
+        
+        // Method 2: Try with different endpoint
+        const simpleResponse = await fetch('https://discord.com/api/v9/users/@me/activity', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(presenceData)
+        });
+        
+        if (simpleResponse.ok) {
+            console.log('✅ Simple endpoint worked!');
+            showStatus('✅ Presence updated!', 'success');
+            return true;
+        }
+        
+        console.log('All alternative methods failed');
+        return false;
+        
+    } catch (altError) {
+        console.error('Alternative methods failed:', altError);
+        return false;
+    }
+}
+
+// Update rich presence (more detailed)
+async function updateRichPresence(accessToken, presenceData) {
+    try {
         const response = await fetch('https://discord.com/api/v9/users/@me/activities', {
             method: 'POST',
             headers: {
@@ -175,56 +292,41 @@ async function updatePresence() {
             body: JSON.stringify(presenceData)
         });
         
-        console.log('API Response:', response.status, response.statusText);
-        
         if (response.ok) {
-            showStatus('✅ Rich Presence updated successfully!', 'success');
-            
-            // Show preview
-            elements.presencePreview.classList.remove('hidden');
-            updatePreview();
-            
-            // Log success
-            const result = await response.json();
-            console.log('Presence update result:', result);
-            
-        } else if (response.status === 401) {
-            // Unauthorized - token expired
-            showStatus('Session expired. Please reconnect.', 'error');
-            clearLocalStorage();
-            showAuth();
-        } else {
-            // Other error
-            const errorText = await response.text();
-            console.error('API Error:', errorText);
-            showStatus(`Failed to update: ${response.status}`, 'error');
+            console.log('✅ Rich presence updated');
+            return true;
         }
+        return false;
     } catch (error) {
-        console.error('Network error:', error);
-        showStatus('Network error. Please check connection.', 'error');
+        console.error('Rich presence error:', error);
+        return false;
     }
 }
 
-// Create presence data from form
+// Create presence data
 function createPresenceData() {
     const activityName = elements.activityName.value || 'Custom Activity';
     const details = elements.details.value || undefined;
     const state = elements.state.value || undefined;
     
-    // Build presence object
     const presence = {
         name: activityName,
-        type: 0, // 0 = Playing, 1 = Streaming, 2 = Listening, 3 = Watching
+        type: 0,
         details: details,
         state: state,
         timestamps: {},
         assets: {
             large_image: 'default_large',
             large_text: activityName
-        }
+        },
+        buttons: [
+            {
+                label: 'Set via Discord Activity',
+                url: 'https://discordactivity.netlify.app'
+            }
+        ]
     };
     
-    // Add timestamps if selected
     const timestampType = elements.timestampType.value;
     const now = Math.floor(Date.now() / 1000);
     
@@ -238,23 +340,30 @@ function createPresenceData() {
     return presence;
 }
 
-// Clear current presence
+// Clear presence
 async function clearPresence() {
     const accessToken = localStorage.getItem('discord_access_token');
     
     if (!accessToken) {
-        showStatus('Not connected to Discord', 'error');
+        showStatus('Not connected', 'error');
         return;
     }
     
     try {
-        const response = await fetch('https://discord.com/api/v9/users/@me/activities', {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
+        // Clear custom status
+        const response = await fetch('https://discord.com/api/v9/users/@me/settings', {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                custom_status: null
+            })
         });
         
         if (response.ok) {
-            showStatus('✅ Presence cleared', 'success');
+            showStatus('✅ Status cleared', 'success');
             elements.presencePreview.classList.add('hidden');
             
             // Clear form
@@ -262,69 +371,65 @@ async function clearPresence() {
             elements.state.value = '';
             elements.timestampType.value = 'none';
             
-        } else if (response.status === 401) {
-            showStatus('Session expired', 'error');
-            clearLocalStorage();
-            showAuth();
+            // Also clear activities
+            try {
+                await fetch('https://discord.com/api/v9/users/@me/activities', {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+            } catch (e) {
+                // Ignore this error
+            }
         }
     } catch (error) {
         showStatus(`Error: ${error.message}`, 'error');
     }
 }
 
-// Load sample configuration
+// Load sample
 function loadSample() {
     elements.activityName.value = 'Discord Activity';
-    elements.details.value = 'Setting up custom presence';
-    elements.state.value = 'Using Presence Manager';
+    elements.details.value = 'Setting custom status';
+    elements.state.value = 'Online via web app';
     elements.timestampType.value = 'start';
     
     updatePreview();
-    showStatus('Sample loaded. Click "Update Presence" to apply.', 'success');
+    showStatus('Sample loaded', 'success');
 }
 
-// Update the preview display
+// Update preview
 function updatePreview() {
     const presence = createPresenceData();
-    let html = `<div style="margin-bottom: 8px;"><strong>${presence.name}</strong></div>`;
+    let html = `<div><strong>${presence.name}</strong></div>`;
     
-    if (presence.details) {
-        html += `<div>📝 ${presence.details}</div>`;
-    }
-    
-    if (presence.state) {
-        html += `<div>🔹 ${presence.state}</div>`;
-    }
+    if (presence.details) html += `<div>${presence.details}</div>`;
+    if (presence.state) html += `<div>${presence.state}</div>`;
     
     if (presence.timestamps.start) {
-        html += `<div>🕒 Started now</div>`;
+        html += `<div>Started: Now</div>`;
     } else if (presence.timestamps.end) {
         const mins = Math.round((presence.timestamps.end - Math.floor(Date.now() / 1000)) / 60);
-        html += `<div>⏱️ ${mins} minutes remaining</div>`;
+        html += `<div>Ends in: ${mins} min</div>`;
     }
     
     elements.previewContent.innerHTML = html;
 }
 
-// UI Control Functions
+// UI functions
 function showControls() {
-    console.log('Showing controls section');
+    console.log('Showing controls');
     elements.authSection.classList.add('hidden');
     elements.controlsSection.classList.remove('hidden');
     
-    // Set default values if empty
     if (!elements.activityName.value) {
         elements.activityName.value = 'Custom Activity';
-    }
-    if (!elements.details.value) {
-        elements.details.value = 'Managing Discord presence';
     }
     
     updatePreview();
 }
 
 function showAuth() {
-    console.log('Showing auth section');
+    console.log('Showing auth');
     elements.authSection.classList.remove('hidden');
     elements.controlsSection.classList.add('hidden');
 }
@@ -334,7 +439,6 @@ function showStatus(message, type) {
     elements.statusMessage.className = `status ${type}`;
     elements.statusMessage.classList.remove('hidden');
     
-    // Auto-hide success messages
     if (type === 'success') {
         setTimeout(() => {
             elements.statusMessage.classList.add('hidden');
@@ -349,39 +453,33 @@ function clearLocalStorage() {
 
 function logout() {
     clearLocalStorage();
-    showStatus('Logged out successfully', 'success');
+    showStatus('Logged out', 'success');
     showAuth();
 }
 
-// Setup all event listeners
+// Setup event listeners
 function setupEventListeners() {
-    // Login button
     if (elements.loginBtn) {
         elements.loginBtn.addEventListener('click', startOAuthFlow);
     }
     
-    // Logout button
     if (elements.logoutBtn) {
         elements.logoutBtn.addEventListener('click', logout);
     }
     
-    // Update button
     if (elements.updateBtn) {
         elements.updateBtn.addEventListener('click', updatePresence);
     }
     
-    // Clear button
     if (elements.clearBtn) {
         elements.clearBtn.addEventListener('click', clearPresence);
     }
     
-    // Sample button
     const sampleBtn = document.getElementById('sample-btn');
     if (sampleBtn) {
         sampleBtn.addEventListener('click', loadSample);
     }
     
-    // Form interactions for preview
     if (elements.timestampType) {
         elements.timestampType.addEventListener('change', () => {
             if (elements.countdownGroup) {
@@ -392,7 +490,6 @@ function setupEventListeners() {
         });
     }
     
-    // Real-time preview updates
     ['activityName', 'details', 'state', 'countdown'].forEach(id => {
         const element = document.getElementById(id);
         if (element) {
@@ -401,35 +498,31 @@ function setupEventListeners() {
     });
 }
 
-// Debug function
-window.debugApp = function() {
-    console.log('=== APP DEBUG INFO ===');
-    console.log('Client ID:', CLIENT_ID);
-    console.log('Redirect URI:', REDIRECT_URI);
-    console.log('Requested Scopes:', 'identify rpc rpc.activities.write');
-    console.log('Stored Token:', localStorage.getItem('discord_access_token') ? 'YES' : 'NO');
-    console.log('Current URL:', window.location.href);
-    console.log('URL Hash:', window.location.hash);
-    console.log('Local Storage:', {
-        token: localStorage.getItem('discord_access_token')?.substring(0, 20) + '...',
-        expiry: localStorage.getItem('discord_token_expiry')
-    });
-    console.log('=====================');
-};
-
-// Auto-test OAuth URL on load (for debugging)
-window.generateOAuthUrl = function() {
-    const authUrl = new URL('https://discord.com/api/oauth2/authorize');
-    authUrl.searchParams.append('client_id', CLIENT_ID);
-    authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
-    authUrl.searchParams.append('response_type', 'token');
-    authUrl.searchParams.append('scope', 'identify rpc rpc.activities.write');
-    authUrl.searchParams.append('prompt', 'consent');
+// Debug helper
+window.testConnection = async function() {
+    console.log('🧪 Testing Discord API connection...');
     
-    console.log('Generated OAuth URL:');
-    console.log(authUrl.toString());
-    console.log('Encoded for testing:');
-    console.log(encodeURI(authUrl.toString()));
+    const token = localStorage.getItem('discord_access_token');
+    if (!token) {
+        console.log('No token found');
+        return;
+    }
     
-    return authUrl.toString();
+    console.log('Testing /users/@me endpoint...');
+    try {
+        const response = await fetch('https://discord.com/api/v9/users/@me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        console.log('Response:', response.status, response.ok);
+        
+        if (response.ok) {
+            const user = await response.json();
+            console.log('User:', user.username);
+            return true;
+        }
+    } catch (error) {
+        console.error('Test failed:', error);
+    }
+    
+    return false;
 };
