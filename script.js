@@ -1,6 +1,6 @@
 // Discord OAuth2 Configuration
 const CLIENT_ID = '1450008731692568729'; // Get from Discord Developer Portal
-const REDIRECT_URI = window.location.origin + window.location.pathname;
+const REDIRECT_URI = 'https://discordactivity.netlify.app';
 const SCOPES = ['identify', 'activities.write']; // activities.write is KEY
 
 // Token storage
@@ -112,7 +112,7 @@ async function refreshAccessToken() {
             },
             body: new URLSearchParams({
                 client_id: CLIENT_ID,
-                client_secret: 'YOUR_CLIENT_SECRET', // From Discord Dev Portal
+                client_secret: 'R0atQJ5kyJcaXh9FtFgNYAj1IIrnm1DJ', // From Discord Dev Portal
                 grant_type: 'refresh_token',
                 refresh_token: refreshToken
             })
@@ -354,3 +354,4 @@ function logout() {
     showStatus('Logged out successfully', 'success');
 
 }
+
