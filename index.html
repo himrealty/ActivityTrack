@@ -1,153 +1,336 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <script src="https://unpkg.com/@discord/embedded-app-sdk@latest"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord Presence Manager</title>
+    <title>Discord Activity - Rich Presence Manager</title>
+    
+    <!-- Discord Embedded App SDK -->
+    <script src="https://unpkg.com/@discord/embedded-app-sdk@0.1.10"></script>
+    
     <style>
         :root {
             --discord-blurple: #5865F2;
             --discord-green: #57F287;
             --discord-dark: #2C2F33;
+            --discord-gray: #36393F;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
         
         body {
-            font-family: Arial, sans-serif;
-            background: var(--discord-dark);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, var(--discord-dark), var(--discord-gray));
             color: white;
-            margin: 0;
+            min-height: 100vh;
             padding: 20px;
+            line-height: 1.6;
         }
         
         .container {
-            max-width: 600px;
+            max-width: 500px;
             margin: 0 auto;
         }
         
-        .auth-section {
-            background: rgba(255,255,255,0.1);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        h1 {
+            font-size: 2.2rem;
+            margin-bottom: 8px;
+            background: linear-gradient(45deg, var(--discord-blurple), #9b59b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .subtitle {
+            color: #b9bbbe;
+            font-size: 1rem;
+        }
+        
+        .connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 15px;
+            padding: 8px 16px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f1c40f;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.connected { background: #2ecc71; animation: none; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .controls-section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
         }
         
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
         
-        input, select, button {
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #ffffff;
+        }
+        
+        .form-control {
             width: 100%;
-            padding: 10px;
-            margin: 5px 0;
-            border-radius: 5px;
-            border: 1px solid #ccc;
+            padding: 12px 15px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            transition: border-color 0.3s;
         }
         
-        button {
+        .form-control:focus {
+            outline: none;
+            border-color: var(--discord-blurple);
+            box-shadow: 0 0 0 2px rgba(88,101,242,0.2);
+        }
+        
+        .btn {
+            padding: 14px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        .btn-primary {
             background: var(--discord-blurple);
             color: white;
-            border: none;
-            cursor: pointer;
-            font-weight: bold;
         }
         
-        button:hover {
-            opacity: 0.9;
+        .btn-primary:hover {
+            background: #4752c4;
+            transform: translateY(-2px);
         }
         
-        .presence-preview {
-            background: rgba(255,255,255,0.05);
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.15);
+        }
+        
+        .btn-danger {
+            background: #ed4245;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c03537;
+        }
+        
+        .preview-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .preview-title {
+            margin-bottom: 15px;
+            color: #b9bbbe;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .preview-content {
             padding: 15px;
+            background: rgba(0,0,0,0.2);
             border-radius: 8px;
-            margin: 10px 0;
+            border-left: 4px solid var(--discord-blurple);
         }
         
-        .status {
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
+        .preview-line {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
-        .success { background: rgba(87,242,135,0.2); }
-        .error { background: rgba(237,66,69,0.2); }
+        .preview-icon {
+            opacity: 0.7;
+        }
         
-        .hidden { display: none; }
+        .status-message {
+            padding: 12px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-size: 0.9rem;
+            display: none;
+        }
+        
+        .status-message.success {
+            display: block;
+            background: rgba(46,204,113,0.1);
+            border: 1px solid rgba(46,204,113,0.3);
+            color: #2ecc71;
+        }
+        
+        .status-message.error {
+            display: block;
+            background: rgba(237,66,69,0.1);
+            border: 1px solid rgba(237,66,69,0.3);
+            color: #ed4245;
+        }
+        
+        .status-message.info {
+            display: block;
+            background: rgba(52,152,219,0.1);
+            border: 1px solid rgba(52,152,219,0.3);
+            color: #3498db;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            
+            .container {
+                max-width: 100%;
+            }
+            
+            .controls-section {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 1.8rem;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎮 Discord Presence Manager</h1>
-        <p>Update your Discord Rich Presence from ANY platform</p>
-        
-        <!-- Authentication Section -->
-        <div id="auth-section" class="auth-section">
-            <h3>Step 1: Connect to Discord</h3>
-            <p>Click below to authorize this app to update your Discord status:</p>
-            <button id="login-btn">Connect to Discord</button>
-            <div id="auth-status" class="status hidden"></div>
+        <div class="header">
+            <h1>🎮 Rich Presence Manager</h1>
+            <p class="subtitle">Update your Discord status across all platforms</p>
+            <div class="connection-status">
+                <div id="status-dot" class="status-dot"></div>
+                <span id="status-text">Initializing...</span>
+            </div>
         </div>
         
-        <!-- Presence Controls (Initially Hidden) -->
-        <div id="controls-section" class="hidden">
-            <button id="logout-btn" class="btn" style="background: #ED4245; margin-top: 10px;">
-    Logout / Disconnect
-</button>
-            <h3>Step 2: Customize Your Presence</h3>
-            
+        <!-- Main Controls -->
+        <div id="controls-section" class="controls-section">
             <div class="form-group">
-                <label>Activity Name:</label>
-                <input type="text" id="activity-name" placeholder="Playing a game">
+                <label for="activity-name">Activity Name</label>
+                <input type="text" id="activity-name" class="form-control" 
+                       placeholder="Playing Custom Activity" value="Custom Activity">
             </div>
             
             <div class="form-group">
-                <label>Details:</label>
-                <input type="text" id="details" placeholder="In the main menu">
+                <label for="details">Details</label>
+                <input type="text" id="details" class="form-control" 
+                       placeholder="What you're doing...">
             </div>
             
             <div class="form-group">
-                <label>State:</label>
-                <input type="text" id="state" placeholder="Level 100">
+                <label for="state">State</label>
+                <input type="text" id="state" class="form-control" 
+                       placeholder="Additional context...">
             </div>
             
             <div class="form-group">
-                <label>Timestamp:</label>
-                <select id="timestamp-type">
+                <label for="timestamp-type">Timestamp</label>
+                <select id="timestamp-type" class="form-control">
                     <option value="none">No timestamp</option>
-                    <option value="start">Start Time (now)</option>
+                    <option value="start">Start Time (from now)</option>
                     <option value="end">End Time (countdown)</option>
                 </select>
             </div>
             
-            <div class="form-group" id="countdown-group">
-                <label>Countdown (minutes):</label>
-                <input type="number" id="countdown" value="60" min="1" max="240">
+            <div id="countdown-group" class="form-group hidden">
+                <label for="countdown">Countdown (minutes)</label>
+                <input type="number" id="countdown" class="form-control" 
+                       value="60" min="1" max="240">
             </div>
             
-            <button id="update-btn">Update Presence</button>
-            <button id="clear-btn" style="background: #ED4245;">Clear Presence</button>
+            <button id="update-btn" class="btn btn-primary">
+                Update Discord Status
+            </button>
             
-            <div id="presence-preview" class="presence-preview hidden">
-                <h4>Preview:</h4>
-                <div id="preview-content"></div>
+            <button id="clear-btn" class="btn btn-danger">
+                Clear Status
+            </button>
+            
+            <div id="status-message" class="status-message"></div>
+            
+            <div class="preview-section">
+                <div class="preview-title">Preview</div>
+                <div id="preview-content" class="preview-content">
+                    <div class="preview-line">
+                        <span class="preview-icon">🎮</span>
+                        <span id="preview-name">Custom Activity</span>
+                    </div>
+                    <div id="preview-details" class="preview-line hidden">
+                        <span class="preview-icon">📝</span>
+                        <span>No details</span>
+                    </div>
+                    <div id="preview-state" class="preview-line hidden">
+                        <span class="preview-icon">🔹</span>
+                        <span>No state</span>
+                    </div>
+                    <div id="preview-timer" class="preview-line hidden">
+                        <span class="preview-icon">⏱️</span>
+                        <span></span>
+                    </div>
+                </div>
             </div>
         </div>
         
-        <div id="status-message" class="status hidden"></div>
-        
-        <div class="platform-info">
-            <h4>✓ Works on:</h4>
-            <ul>
-                <li>Discord Web (discord.com)</li>
-                <li>Discord Desktop App</li>
-                <li>Discord Mobile App</li>
-                <li>Any web browser</li>
-            </ul>
+        <div style="margin-top: 30px; text-align: center; color: #72767d; font-size: 0.85rem;">
+            <p>✓ Works in Discord Desktop, Mobile & Web</p>
+            <p>✓ Updates Rich Presence for friends to see</p>
         </div>
     </div>
     
     <script src="script.js"></script>
 </body>
-
 </html>
-
