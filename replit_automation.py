@@ -271,51 +271,99 @@ try:
     time.sleep(10)
     safe_screenshot('6_project_page')
     
-    # 7. Execute command in shell
-    print('Step 7: Executing command in shell')
-    command = os.environ['COMMAND_TO_RUN']
+    # 7. Click Run button or execute command
+    print('Step 7: Looking for Run button or Shell')
+    command = os.environ.get('COMMAND_TO_RUN', '').strip()
     print(f'Command to run: {command}')
     
-    # Wait for shell/terminal to load
+    # Wait for page to fully load
     time.sleep(5)
     
-    # Try to find and interact with shell
-    result = driver.execute_script(f"""
-        const command = '{command}';
-        let executed = false;
+    # Strategy 1: Try to click the Run button first
+    run_clicked = False
+    if not command or command.lower() in ['run', 'click run', 'start']:
+        print('Attempting to click Run button...')
         
-        // Method 1: Look for contenteditable divs (terminal input)
-        const editables = document.querySelectorAll('[contenteditable="true"]');
-        for (const elem of editables) {{
-            try {{
-                elem.focus();
-                elem.textContent = command;
-                elem.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        # Try multiple selectors for Run button
+        run_button = driver.execute_script("""
+            // Look for Run button
+            const buttons = Array.from(document.querySelectorAll('button, [role="button"], .run-button'));
+            
+            for (const btn of buttons) {
+                const text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
+                const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                const title = (btn.getAttribute('title') || '').toLowerCase();
+                const className = (btn.className || '').toLowerCase();
                 
-                // Simulate Enter key
-                const enterEvent = new KeyboardEvent('keydown', {{
-                    key: 'Enter',
-                    code: 'Enter',
-                    keyCode: 13,
-                    which: 13,
-                    bubbles: true,
-                    cancelable: true
-                }});
-                elem.dispatchEvent(enterEvent);
-                executed = true;
-                break;
-            }} catch(e) {{ console.error(e); }}
-        }}
+                // Check if it's a Run button
+                if (text === 'run' || 
+                    text.includes('▶') || 
+                    ariaLabel.includes('run') || 
+                    title.includes('run') ||
+                    className.includes('run')) {
+                    
+                    const style = window.getComputedStyle(btn);
+                    if (style.display !== 'none' && 
+                        style.visibility !== 'hidden' && 
+                        btn.offsetParent !== null) {
+                        return btn;
+                    }
+                }
+            }
+            return null;
+        """)
         
-        // Method 2: Look for textareas
-        if (!executed) {{
-            const textareas = document.querySelectorAll('textarea');
-            for (const elem of textareas) {{
+        if run_button:
+            try:
+                run_button.click()
+                print('✓ Run button clicked!')
+                run_clicked = True
+                time.sleep(3)
+                safe_screenshot('7a_run_button_clicked')
+            except Exception as e:
+                print(f'Failed to click run button: {e}')
+        else:
+            print('Run button not found')
+    
+    # Strategy 2: If no Run button or need to execute a specific command
+    if not run_clicked and command and command.lower() not in ['run', 'click run', 'start']:
+        print(f'Attempting to execute command in shell: {command}')
+        
+        # First, try to open/focus the Shell tab
+        shell_opened = driver.execute_script("""
+            // Look for Shell tab
+            const tabs = Array.from(document.querySelectorAll('[role="tab"], .tab, button'));
+            for (const tab of tabs) {
+                const text = (tab.textContent || '').trim().toLowerCase();
+                if (text === 'shell' || text === 'console') {
+                    tab.click();
+                    return true;
+                }
+            }
+            return false;
+        """)
+        
+        if shell_opened:
+            print('Shell tab opened')
+            time.sleep(2)
+            safe_screenshot('7b_shell_opened')
+        
+        # Now try to interact with shell
+        time.sleep(2)
+        
+        result = driver.execute_script(f"""
+            const command = '{command.replace("'", "\\'")}';
+            let executed = false;
+            
+            // Method 1: Look for Xterm.js terminal (common in Replit)
+            const xtermElements = document.querySelectorAll('.xterm-helper-textarea, .terminal textarea');
+            for (const elem of xtermElements) {{
                 try {{
                     elem.focus();
                     elem.value = command;
                     elem.dispatchEvent(new Event('input', {{ bubbles: true }}));
                     
+                    // Send Enter
                     const enterEvent = new KeyboardEvent('keydown', {{
                         key: 'Enter',
                         code: 'Enter',
@@ -326,39 +374,202 @@ try:
                     }});
                     elem.dispatchEvent(enterEvent);
                     executed = true;
+                    console.log('Command sent via xterm textarea');
                     break;
                 }} catch(e) {{ console.error(e); }}
             }}
-        }}
+            
+            // Method 2: Look for contenteditable divs
+            if (!executed) {{
+                const editables = document.querySelectorAll('[contenteditable="true"]');
+                for (const elem of editables) {{
+                    try {{
+                        elem.focus();
+                        elem.textContent = command;
+                        elem.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        
+                        const enterEvent = new KeyboardEvent('keydown', {{
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13,
+                            bubbles: true,
+                            cancelable: true
+                        }});
+                        elem.dispatchEvent(enterEvent);
+                        executed = true;
+                        console.log('Command sent via contenteditable');
+                        break;
+                    }} catch(e) {{ console.error(e); }}
+                }}
+            }}
+            
+            // Method 3: Try regular textareas
+            if (!executed) {{
+                const textareas = document.querySelectorAll('textarea');
+                for (const elem of textareas) {{
+                    try {{
+                        elem.focus();
+                        elem.value = command;
+                        elem.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        elem.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        
+                        const enterEvent = new KeyboardEvent('keydown', {{
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13,
+                            bubbles: true,
+                            cancelable: true
+                        }});
+                        elem.dispatchEvent(enterEvent);
+                        executed = true;
+                        console.log('Command sent via textarea');
+                        break;
+                    }} catch(e) {{ console.error(e); }}
+                }}
+            }}
+            
+            // Method 4: Try to find any focused element and send keys
+            if (!executed) {{
+                try {{
+                    const active = document.activeElement;
+                    if (active) {{
+                        active.value = command;
+                        active.textContent = command;
+                        active.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        
+                        const enterEvent = new KeyboardEvent('keydown', {{
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13,
+                            bubbles: true,
+                            cancelable: true
+                        }});
+                        active.dispatchEvent(enterEvent);
+                        executed = true;
+                        console.log('Command sent to active element');
+                    }}
+                }} catch(e) {{ console.error(e); }}
+            }}
+            
+            return executed ? 'Command sent to shell' : 'No shell input found';
+        """)
         
-        return executed ? 'Command sent to shell' : 'No shell input found';
-    """)
+        print(f'Shell interaction result: {result}')
+        
+        # Alternative: Use Selenium to send keys directly
+        if 'No shell input found' in result:
+            print('Trying Selenium sendKeys as fallback...')
+            try:
+                # Find any textarea or input that might be the shell
+                shell_inputs = driver.find_elements(By.CSS_SELECTOR, 
+                    'textarea, input[type="text"], .xterm-helper-textarea, [contenteditable="true"]')
+                
+                for elem in shell_inputs:
+                    try:
+                        if elem.is_displayed():
+                            elem.click()
+                            time.sleep(0.5)
+                            elem.send_keys(command)
+                            elem.send_keys(Keys.RETURN)
+                            print('Command sent via Selenium sendKeys')
+                            break
+                    except:
+                        continue
+            except Exception as e:
+                print(f'Selenium fallback failed: {e}')
     
-    print(f'Shell interaction result: {result}')
-    time.sleep(5)
+    time.sleep(8)  # Wait longer for command to execute
     safe_screenshot('7_after_command')
     
-    # 8. Capture output
-    print('Step 8: Capturing output')
-    time.sleep(3)
+    # 8. Wait and capture output
+    print('Step 8: Waiting for execution and capturing output')
     
-    output = driver.execute_script("""
+    # Get wait time from environment or default to 15 seconds
+    wait_time = int(os.environ.get('WAIT_TIME', '15'))
+    print(f'Waiting {wait_time} seconds for command to complete...')
+    
+    # Wait and take periodic screenshots
+    for i in range(0, wait_time, 5):
+        time.sleep(5)
+        safe_screenshot(f'8_progress_{i+5}s')
+        print(f'  ... {i+5}s elapsed')
+    
+    # Capture final state
+    print('\nCapturing final output...')
+    
+    # Get all text from page
+    page_text = driver.execute_script("""
         return document.body.innerText || document.body.textContent || '';
     """)
     
-    print('=' * 50)
-    print('OUTPUT:')
-    print('=' * 50)
-    if output:
-        # Print last 3000 characters for readability
-        print(output[-3000:] if len(output) > 3000 else output)
+    # Try to get console/shell output specifically
+    console_output = driver.execute_script("""
+        // Try to find console/terminal output areas
+        const consoleSelectors = [
+            '.console-output',
+            '.terminal-output', 
+            '.xterm-rows',
+            '.shell-output',
+            '[class*="console"]',
+            '[class*="terminal"]',
+            '[class*="output"]'
+        ];
         
-        with open('output.txt', 'w', encoding='utf-8') as f:
-            f.write(output)
-        print('\nFull output saved to output.txt')
+        let output = '';
+        for (const selector of consoleSelectors) {
+            const elements = document.querySelectorAll(selector);
+            for (const elem of elements) {
+                const text = elem.innerText || elem.textContent || '';
+                if (text.length > output.length) {
+                    output = text;
+                }
+            }
+        }
+        
+        return output || 'No console output found';
+    """)
+    
+    # Get browser console logs
+    try:
+        logs = driver.get_log('browser')
+        console_logs = '\n'.join([f"{log['level']}: {log['message']}" for log in logs])
+    except:
+        console_logs = 'Could not retrieve browser console logs'
+    
+    print('=' * 70)
+    print('PAGE TEXT OUTPUT:')
+    print('=' * 70)
+    if page_text:
+        # Print last 2000 characters
+        print(page_text[-2000:] if len(page_text) > 2000 else page_text)
+        with open('page_output.txt', 'w', encoding='utf-8') as f:
+            f.write(page_text)
+        print('\nFull page output saved to page_output.txt')
     else:
-        print('No output captured')
-    print('=' * 50)
+        print('No page text captured')
+    
+    print('\n' + '=' * 70)
+    print('CONSOLE/SHELL OUTPUT:')
+    print('=' * 70)
+    if console_output and console_output != 'No console output found':
+        print(console_output[-2000:] if len(console_output) > 2000 else console_output)
+        with open('console_output.txt', 'w', encoding='utf-8') as f:
+            f.write(console_output)
+        print('\nFull console output saved to console_output.txt')
+    else:
+        print(console_output)
+    
+    print('\n' + '=' * 70)
+    print('BROWSER CONSOLE LOGS:')
+    print('=' * 70)
+    print(console_logs[-1000:] if len(console_logs) > 1000 else console_logs)
+    with open('browser_logs.txt', 'w', encoding='utf-8') as f:
+        f.write(console_logs)
+    print('\nBrowser logs saved to browser_logs.txt')
+    print('=' * 70)
     
     safe_screenshot('8_final')
     print('\n✅ Automation completed successfully')
