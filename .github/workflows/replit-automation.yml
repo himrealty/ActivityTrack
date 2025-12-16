@@ -30,27 +30,21 @@ jobs:
         python -m pip install --upgrade pip
         pip install selenium webdriver-manager
         
-    - name: Install Chrome and ChromeDriver
+    - name: Install Chrome
       run: |
         sudo apt-get update
-        sudo apt-get install -y wget unzip
+        sudo apt-get install -y wget
         
-        # Install Chrome from Google's repository
+        # Install Chrome
         wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
         echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
         sudo apt-get update
         sudo apt-get install -y google-chrome-stable
+        google-chrome --version
         
-        # Install ChromeDriver using webdriver-manager
-        python -m pip install webdriver-manager
-        python -c "
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
-import os
-path = ChromeDriverManager().install()
-print(f'ChromeDriver installed at: {path}')
-os.environ['CHROMEDRIVER_PATH'] = path
-"
+    - name: Install ChromeDriver with webdriver-manager
+      run: |
+        python -c "from webdriver_manager.chrome import ChromeDriverManager; print(f'ChromeDriver path: {ChromeDriverManager().install()}')"
         
     - name: Run Replit automation
       env:
