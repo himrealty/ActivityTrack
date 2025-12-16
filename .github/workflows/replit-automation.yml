@@ -54,7 +54,7 @@ jobs:
         COMMAND_TO_RUN: ${{ github.event.inputs.command_to_run }}
       run: python replit_automation.py
         
-    - name: Upload screenshots and logs
+    - name: Upload results
       uses: actions/upload-artifact@v4
       if: always()
       with:
