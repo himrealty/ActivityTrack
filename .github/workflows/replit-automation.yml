@@ -55,6 +55,9 @@ jobs:
         chromedriver --version
         
     - name: Run Replit automation
+      env:
+        REPLIT_PROJECT_URL: ${{ github.event.inputs.replit_project_url }}
+        COMMAND_TO_RUN: ${{ github.event.inputs.command_to_run }}
       run: |
         python -c "
 import os
@@ -146,7 +149,7 @@ try:
     
     # 5. Navigate to specific project
     print('Step 4: Navigating to project...')
-    project_url = os.environ.get('REPLIT_PROJECT_URL') or '${{ github.event.inputs.replit_project_url }}'
+    project_url = os.environ['REPLIT_PROJECT_URL']
     driver.get(project_url)
     time.sleep(5)
     
@@ -164,7 +167,7 @@ try:
     
     # 7. Find terminal input and execute command
     print('Step 6: Executing command in terminal...')
-    command_to_run = os.environ.get('COMMAND_TO_RUN') or '${{ github.event.inputs.command_to_run }}'
+    command_to_run = os.environ['COMMAND_TO_RUN']
     print(f'Command to execute: {command_to_run}')
     
     # Wait for terminal to be ready and find input
