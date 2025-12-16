@@ -3,14 +3,26 @@ name: Replit Browser Automation
 on:
   workflow_dispatch:
     inputs:
-      command_to_run:
-        description: 'Command to execute in Replit shell'
+      action_type:
+        description: 'Action to perform'
         required: true
-        default: 'ls -la'
+        type: choice
+        options:
+          - 'click_run_button'
+          - 'execute_command'
+        default: 'click_run_button'
+      command_to_run:
+        description: 'Command to execute in shell (if action_type is execute_command)'
+        required: false
+        default: 'python main.py'
       replit_project_url:
         description: 'Replit project URL'
         required: true
         default: 'https://replit.com/@testhimrealty/WebBrowser'
+      wait_time:
+        description: 'Time to wait after running (seconds)'
+        required: false
+        default: '15'
 
 jobs:
   replit-automation:
@@ -23,7 +35,7 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9'
+        python-version: '3.11'
         
     - name: Install dependencies
       run: |
@@ -42,7 +54,7 @@ jobs:
         sudo apt-get install -y google-chrome-stable
         google-chrome --version
         
-    - name: Install ChromeDriver with webdriver-manager
+    - name: Install ChromeDriver
       run: |
         python -c "from webdriver_manager.chrome import ChromeDriverManager; print(f'ChromeDriver path: {ChromeDriverManager().install()}')"
         
@@ -51,16 +63,24 @@ jobs:
         REPLIT_EMAIL: ${{ secrets.REPLIT_EMAIL }}
         REPLIT_PASSWORD: ${{ secrets.REPLIT_PASSWORD }}
         REPLIT_PROJECT_URL: ${{ github.event.inputs.replit_project_url }}
-        COMMAND_TO_RUN: ${{ github.event.inputs.command_to_run }}
+        COMMAND_TO_RUN: ${{ github.event.inputs.action_type == 'click_run_button' && 'run' || github.event.inputs.command_to_run }}
+        WAIT_TIME: ${{ github.event.inputs.wait_time }}
       run: python replit_automation.py
         
-    - name: Upload results
+    - name: Upload screenshots
       uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: replit-automation-results
+        name: replit-screenshots
+        path: '*.png'
+        if-no-files-found: ignore
+        
+    - name: Upload logs and output
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: replit-logs
         path: |
-          *.png
-          *.html
           *.txt
+          *.html
         if-no-files-found: ignore
