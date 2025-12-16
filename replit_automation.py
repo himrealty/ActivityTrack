@@ -5,6 +5,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 print('Starting Replit automation...')
@@ -15,278 +17,369 @@ chrome_options.add_argument('--no-sandbox')
 chrome_options.add_argument('--disable-dev-shm-usage')
 chrome_options.add_argument('--headless')
 chrome_options.add_argument('--window-size=1920,1080')
+chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
 service = Service(ChromeDriverManager().install())
 driver = webdriver.Chrome(service=service, options=chrome_options)
+wait = WebDriverWait(driver, 20)
+
+def wait_for_page_load():
+    """Wait for page to be fully loaded"""
+    time.sleep(3)
+    driver.execute_script("return document.readyState") == "complete"
+
+def safe_screenshot(name):
+    """Take screenshot with error handling"""
+    try:
+        driver.save_screenshot(f'{name}.png')
+        print(f'Screenshot saved: {name}.png')
+    except Exception as e:
+        print(f'Failed to save screenshot {name}: {e}')
 
 try:
     # 1. Go to login page
-    print('Step 1: Go to login page')
+    print('Step 1: Navigating to login page')
     driver.get('https://replit.com/login')
+    wait_for_page_load()
+    safe_screenshot('1_initial_page')
+    
+    # Wait for any initial redirects or page loads
     time.sleep(5)
-    driver.save_screenshot('1_page.png')
     
-    # 2. Look for "Log in" link (it's on the signup page)
-    print('Step 2: Find Log in link')
+    # Check current URL
+    current_url = driver.current_url
+    print(f'Current URL: {current_url}')
     
-    # The page shows "Sign Up" but has "Log in" link somewhere
-    # Try to find and click "Log in"
-    login_found = False
+    # Save page source for debugging
+    with open('page_source.html', 'w', encoding='utf-8') as f:
+        f.write(driver.page_source)
+    print('Page source saved to page_source.html')
     
-    # Method 1: Look for "Log in" text
-    elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'Log in') or contains(text(), 'Sign in')]")
-    for elem in elements:
+    # 2. Look for email/username field with multiple strategies
+    print('Step 2: Looking for email/username field')
+    
+    # Strategy 1: Wait for input fields to be present
+    input_selectors = [
+        "input[type='email']",
+        "input[name*='email' i]",
+        "input[name*='username' i]",
+        "input[placeholder*='email' i]",
+        "input[placeholder*='username' i]",
+        "input[id*='email' i]",
+        "input[id*='username' i]",
+        "input[autocomplete='email']",
+        "input[autocomplete='username']"
+    ]
+    
+    email_input = None
+    for selector in input_selectors:
         try:
-            if elem.is_displayed():
-                print(f'Found login text: {elem.text}')
-                elem.click()
-                login_found = True
-                print('Clicked login link')
-                time.sleep(3)
+            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+            for elem in elements:
+                if elem.is_displayed():
+                    email_input = elem
+                    print(f'Found email field using selector: {selector}')
+                    break
+            if email_input:
+                break
+        except Exception as e:
+            continue
+    
+    # Strategy 2: Use JavaScript to find first visible text/email input
+    if not email_input:
+        print('Trying JavaScript approach to find email field...')
+        email_input = driver.execute_script("""
+            // Find all input elements
+            const inputs = Array.from(document.querySelectorAll('input'));
+            
+            // Filter for visible inputs that could be email/username
+            const candidates = inputs.filter(input => {
+                const style = window.getComputedStyle(input);
+                const isVisible = style.display !== 'none' && 
+                                style.visibility !== 'hidden' && 
+                                input.offsetParent !== null;
+                
+                if (!isVisible) return false;
+                
+                const type = (input.type || '').toLowerCase();
+                const name = (input.name || '').toLowerCase();
+                const placeholder = (input.placeholder || '').toLowerCase();
+                const id = (input.id || '').toLowerCase();
+                const autocomplete = (input.autocomplete || '').toLowerCase();
+                
+                // Check if it's likely an email/username field
+                return type === 'email' || 
+                       type === 'text' ||
+                       name.includes('email') || 
+                       name.includes('username') ||
+                       placeholder.includes('email') ||
+                       placeholder.includes('username') ||
+                       id.includes('email') ||
+                       id.includes('username') ||
+                       autocomplete === 'email' ||
+                       autocomplete === 'username';
+            });
+            
+            console.log('Found candidates:', candidates.length);
+            return candidates[0] || null;
+        """)
+    
+    if not email_input:
+        print('ERROR: Could not find email input field')
+        # Take screenshot and save HTML for debugging
+        safe_screenshot('2_email_not_found')
+        
+        # Print all visible inputs for debugging
+        all_inputs = driver.find_elements(By.TAG_NAME, 'input')
+        print(f'\nFound {len(all_inputs)} total input elements:')
+        for i, inp in enumerate(all_inputs):
+            try:
+                print(f'  Input {i}: type={inp.get_attribute("type")}, '
+                      f'name={inp.get_attribute("name")}, '
+                      f'id={inp.get_attribute("id")}, '
+                      f'placeholder={inp.get_attribute("placeholder")}, '
+                      f'visible={inp.is_displayed()}')
+            except:
+                pass
+        raise Exception('Email field not found')
+    
+    # 3. Fill email
+    print('Step 3: Filling email field')
+    email = os.environ['REPLIT_EMAIL']
+    
+    # Clear and fill using multiple methods for reliability
+    try:
+        email_input.clear()
+    except:
+        pass
+    
+    email_input.send_keys(email)
+    
+    # Verify value was set
+    time.sleep(1)
+    current_value = email_input.get_attribute('value')
+    print(f'Email field value after fill: {current_value}')
+    
+    safe_screenshot('3_email_filled')
+    
+    # 4. Find and fill password field
+    print('Step 4: Looking for password field')
+    
+    password_input = None
+    try:
+        password_input = wait.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password']"))
+        )
+        print('Found password field')
+    except:
+        # Fallback to JavaScript
+        password_input = driver.execute_script("""
+            const inputs = Array.from(document.querySelectorAll('input[type="password"]'));
+            return inputs.find(input => {
+                const style = window.getComputedStyle(input);
+                return style.display !== 'none' && 
+                       style.visibility !== 'hidden' && 
+                       input.offsetParent !== null;
+            }) || null;
+        """)
+    
+    if not password_input:
+        print('ERROR: Could not find password field')
+        safe_screenshot('4_password_not_found')
+        raise Exception('Password field not found')
+    
+    password = os.environ['REPLIT_PASSWORD']
+    try:
+        password_input.clear()
+    except:
+        pass
+    
+    password_input.send_keys(password)
+    time.sleep(1)
+    
+    safe_screenshot('4_password_filled')
+    
+    # 5. Find and click submit button
+    print('Step 5: Looking for submit button')
+    
+    # Try multiple selectors for submit button
+    submit_selectors = [
+        "button[type='submit']",
+        "button:contains('Sign in')",
+        "button:contains('Log in')",
+        "button:contains('Continue')",
+        "input[type='submit']"
+    ]
+    
+    submit_button = None
+    for selector in submit_selectors:
+        try:
+            buttons = driver.find_elements(By.CSS_SELECTOR, selector.split(':')[0])
+            for btn in buttons:
+                if btn.is_displayed():
+                    text = btn.text.lower()
+                    if any(word in text for word in ['sign in', 'log in', 'continue', 'submit']):
+                        submit_button = btn
+                        print(f'Found submit button with text: {btn.text}')
+                        break
+            if submit_button:
                 break
         except:
             continue
     
-    # Method 2: Look for links with login
-    if not login_found:
-        links = driver.find_elements(By.TAG_NAME, 'a')
-        for link in links:
-            try:
-                href = link.get_attribute('href') or ''
-                text = link.text or ''
-                if ('login' in href.lower() or 'log in' in text.lower() or 'sign in' in text.lower()) and link.is_displayed():
-                    link.click()
-                    login_found = True
-                    print('Clicked login link')
-                    time.sleep(3)
-                    break
-            except:
-                continue
-    
-    driver.save_screenshot('2_after_login_click.png')
-    
-    # 3. Fill email - use JavaScript to find and fill
-    print('Step 3: Fill email')
-    
-    # Execute JavaScript to find and fill email field
-    driver.execute_script("""
-        // Find all input fields
-        var inputs = document.getElementsByTagName('input');
-        var emailInput = null;
-        
-        for (var i = 0; i < inputs.length; i++) {
-            var inp = inputs[i];
-            var type = inp.type || '';
-            var name = inp.name || '';
-            var placeholder = inp.placeholder || '';
-            var id = inp.id || '';
-            
-            // Check if this is likely an email field
-            if (type.toLowerCase() === 'email' || 
-                name.toLowerCase().includes('email') || 
-                name.toLowerCase().includes('username') ||
-                placeholder.toLowerCase().includes('email') ||
-                placeholder.toLowerCase().includes('username') ||
-                id.toLowerCase().includes('email') ||
-                id.toLowerCase().includes('username')) {
+    # Fallback to JavaScript
+    if not submit_button:
+        print('Using JavaScript to find submit button...')
+        submit_button = driver.execute_script("""
+            const buttons = Array.from(document.querySelectorAll('button, input[type="submit"]'));
+            return buttons.find(btn => {
+                const style = window.getComputedStyle(btn);
+                const isVisible = style.display !== 'none' && 
+                                style.visibility !== 'hidden' && 
+                                btn.offsetParent !== null;
                 
-                if (inp.offsetParent !== null) { // Check if visible
-                    emailInput = inp;
-                    break;
-                }
-            }
-        }
-        
-        // If no email field found, use first visible text input
-        if (!emailInput) {
-            for (var i = 0; i < inputs.length; i++) {
-                var inp = inputs[i];
-                if (inp.type === 'text' && inp.offsetParent !== null) {
-                    emailInput = inp;
-                    break;
-                }
-            }
-        }
-        
-        // Fill email
-        if (emailInput) {
-            emailInput.value = arguments[0];
-            emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-            emailInput.dispatchEvent(new Event('change', { bubbles: true }));
-            return 'Email field found and filled';
-        }
-        
-        return 'No email field found';
-    """, os.environ['REPLIT_EMAIL'])
-    
-    time.sleep(2)
-    driver.save_screenshot('3_email_filled.png')
-    
-    # 4. Fill password - use JavaScript
-    print('Step 4: Fill password')
-    
-    driver.execute_script("""
-        // Find password field
-        var inputs = document.getElementsByTagName('input');
-        var passwordInput = null;
-        
-        for (var i = 0; i < inputs.length; i++) {
-            var inp = inputs[i];
-            if (inp.type === 'password' && inp.offsetParent !== null) {
-                passwordInput = inp;
-                break;
-            }
-        }
-        
-        // Fill password
-        if (passwordInput) {
-            passwordInput.value = arguments[0];
-            passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
-            passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
-            return 'Password field found and filled';
-        }
-        
-        return 'No password field found';
-    """, os.environ['REPLIT_PASSWORD'])
-    
-    time.sleep(2)
-    driver.save_screenshot('4_password_filled.png')
-    
-    # 5. Submit form - use JavaScript
-    print('Step 5: Submit form')
-    
-    driver.execute_script("""
-        // Try to find and click submit button
-        var buttons = document.getElementsByTagName('button');
-        var submitted = false;
-        
-        for (var i = 0; i < buttons.length; i++) {
-            var btn = buttons[i];
-            var text = btn.textContent || btn.innerText || '';
-            
-            if ((text.toLowerCase().includes('sign in') || 
-                 text.toLowerCase().includes('log in') || 
-                 text.toLowerCase().includes('continue') ||
-                 btn.type === 'submit') && 
-                btn.offsetParent !== null) {
+                if (!isVisible) return false;
                 
-                btn.click();
-                submitted = true;
-                return 'Submit button clicked: ' + text;
-            }
-        }
-        
-        // If no button found, try to submit form
-        var forms = document.getElementsByTagName('form');
-        if (forms.length > 0 && !submitted) {
-            forms[0].submit();
-            return 'Form submitted';
-        }
-        
-        return 'No submit method found';
-    """)
+                const text = (btn.textContent || btn.value || '').toLowerCase();
+                return text.includes('sign in') || 
+                       text.includes('log in') || 
+                       text.includes('continue') ||
+                       btn.type === 'submit';
+            }) || null;
+        """)
     
-    print('Form submitted')
+    if not submit_button:
+        # Last resort: submit form with Enter key
+        print('Submit button not found, trying Enter key')
+        password_input.send_keys(Keys.RETURN)
+    else:
+        submit_button.click()
+        print('Submit button clicked')
+    
     time.sleep(8)
-    driver.save_screenshot('5_after_submit.png')
+    safe_screenshot('5_after_submit')
     
-    # 6. Go to project
-    print('Step 6: Go to project')
-    driver.get(os.environ['REPLIT_PROJECT_URL'])
-    time.sleep(8)
-    driver.save_screenshot('6_project.png')
+    # Check if login was successful
+    current_url = driver.current_url
+    print(f'Current URL after login: {current_url}')
     
-    # 7. Run command via JavaScript
-    print('Step 7: Run command')
+    # 6. Navigate to project
+    print('Step 6: Navigating to project')
+    project_url = os.environ['REPLIT_PROJECT_URL']
+    driver.get(project_url)
+    time.sleep(10)
+    safe_screenshot('6_project_page')
+    
+    # 7. Execute command in shell
+    print('Step 7: Executing command in shell')
     command = os.environ['COMMAND_TO_RUN']
-    print(f'Command: {command}')
+    print(f'Command to run: {command}')
     
-    driver.execute_script(f"""
-        // Try to find terminal/console
-        var found = false;
+    # Wait for shell/terminal to load
+    time.sleep(5)
+    
+    # Try to find and interact with shell
+    result = driver.execute_script(f"""
+        const command = '{command}';
+        let executed = false;
         
-        // Look for contenteditable divs (terminal)
-        var editables = document.querySelectorAll('[contenteditable="true"]');
-        for (var i = 0; i < editables.length; i++) {{
+        // Method 1: Look for contenteditable divs (terminal input)
+        const editables = document.querySelectorAll('[contenteditable="true"]');
+        for (const elem of editables) {{
             try {{
-                editables[i].textContent = '{command}';
-                editables[i].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                elem.focus();
+                elem.textContent = command;
+                elem.dispatchEvent(new Event('input', {{ bubbles: true }}));
                 
-                // Send Enter key
-                var enterEvent = new KeyboardEvent('keydown', {{
+                // Simulate Enter key
+                const enterEvent = new KeyboardEvent('keydown', {{
                     key: 'Enter',
                     code: 'Enter',
                     keyCode: 13,
-                    bubbles: true
+                    which: 13,
+                    bubbles: true,
+                    cancelable: true
                 }});
-                editables[i].dispatchEvent(enterEvent);
-                found = true;
+                elem.dispatchEvent(enterEvent);
+                executed = true;
                 break;
-            }} catch(e) {{}}
+            }} catch(e) {{ console.error(e); }}
         }}
         
-        // Look for textareas
-        if (!found) {{
-            var textareas = document.getElementsByTagName('textarea');
-            for (var i = 0; i < textareas.length; i++) {{
+        // Method 2: Look for textareas
+        if (!executed) {{
+            const textareas = document.querySelectorAll('textarea');
+            for (const elem of textareas) {{
                 try {{
-                    textareas[i].value = '{command}';
-                    textareas[i].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    elem.focus();
+                    elem.value = command;
+                    elem.dispatchEvent(new Event('input', {{ bubbles: true }}));
                     
-                    var enterEvent = new KeyboardEvent('keydown', {{
+                    const enterEvent = new KeyboardEvent('keydown', {{
                         key: 'Enter',
                         code: 'Enter',
                         keyCode: 13,
-                        bubbles: true
+                        which: 13,
+                        bubbles: true,
+                        cancelable: true
                     }});
-                    textareas[i].dispatchEvent(enterEvent);
-                    found = true;
+                    elem.dispatchEvent(enterEvent);
+                    executed = true;
                     break;
-                }} catch(e) {{}}
+                }} catch(e) {{ console.error(e); }}
             }}
         }}
         
-        return found ? 'Command sent' : 'No terminal found';
+        return executed ? 'Command sent to shell' : 'No shell input found';
     """)
     
-    print('Command executed')
+    print(f'Shell interaction result: {result}')
     time.sleep(5)
-    driver.save_screenshot('7_after_command.png')
+    safe_screenshot('7_after_command')
     
-    # 8. Get output
-    print('Step 8: Get output')
-    output = driver.execute_script("return document.body.innerText || document.body.textContent;")
+    # 8. Capture output
+    print('Step 8: Capturing output')
+    time.sleep(3)
     
+    output = driver.execute_script("""
+        return document.body.innerText || document.body.textContent || '';
+    """)
+    
+    print('=' * 50)
+    print('OUTPUT:')
+    print('=' * 50)
     if output:
-        print('=' * 50)
-        print('OUTPUT:')
-        print('=' * 50)
+        # Print last 3000 characters for readability
         print(output[-3000:] if len(output) > 3000 else output)
-        print('=' * 50)
         
         with open('output.txt', 'w', encoding='utf-8') as f:
             f.write(output)
+        print('\nFull output saved to output.txt')
+    else:
+        print('No output captured')
+    print('=' * 50)
     
-    driver.save_screenshot('8_final.png')
-    print('✅ Done')
+    safe_screenshot('8_final')
+    print('\n✅ Automation completed successfully')
     
 except Exception as e:
-    print(f'❌ Error: {e}')
+    print(f'\n❌ Error occurred: {e}')
     import traceback
     traceback.print_exc()
     
-    try:
-        driver.save_screenshot('error.png')
-    except:
-        pass
+    safe_screenshot('error')
     
     try:
-        with open('source.html', 'w', encoding='utf-8') as f:
+        with open('error_page_source.html', 'w', encoding='utf-8') as f:
             f.write(driver.page_source)
+        print('Error page source saved to error_page_source.html')
     except:
         pass
     
     raise
 
 finally:
+    print('Closing browser...')
     driver.quit()
+    print('Done!')
