@@ -351,8 +351,10 @@ try:
         # Now try to interact with shell
         time.sleep(2)
         
+        # Escape command for JavaScript
+        escaped_command = command.replace("'", "\\'")
         result = driver.execute_script(f"""
-            const command = '{command.replace("'", "\\'")}';
+            const command = '{escaped_command}';
             let executed = false;
             
             // Method 1: Look for Xterm.js terminal (common in Replit)
