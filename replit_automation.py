@@ -3,10 +3,9 @@ import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 print('Starting Replit automation...')
 
@@ -21,7 +20,9 @@ chrome_options.add_argument('--disable-blink-features=AutomationControlled')
 chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
 chrome_options.add_experimental_option('useAutomationExtension', False)
 
-driver = webdriver.Chrome(options=chrome_options)
+# Use webdriver-manager to handle ChromeDriver
+service = Service(ChromeDriverManager().install())
+driver = webdriver.Chrome(service=service, options=chrome_options)
 driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
 try:
@@ -83,7 +84,7 @@ try:
     except:
         password_field.send_keys(Keys.RETURN)
     
-    time.sleep(5)  # Wait for login to complete
+    time.sleep(5)
     
     # 5. Navigate to specific project
     print('Step 4: Navigating to project...')
@@ -91,10 +92,9 @@ try:
     driver.get(project_url)
     time.sleep(5)
     
-    # 6. Open shell/terminal (Replit's interface)
+    # 6. Open shell/terminal
     print('Step 5: Opening terminal/shell...')
     
-    # Look for Run button to start the project
     try:
         run_button = driver.find_element(By.XPATH, '//button[contains(text(), "Run")]')
         run_button.click()
@@ -108,11 +108,9 @@ try:
     command_to_run = os.environ['COMMAND_TO_RUN']
     print(f'Command to execute: {command_to_run}')
     
-    # Wait for terminal to be ready and find input
     terminal_input = None
     for attempt in range(10):
         try:
-            # Try multiple selectors for Replit's terminal input
             selectors = [
                 'div[data-cy="terminal-input"]',
                 'textarea.terminal-input',
@@ -143,29 +141,18 @@ try:
         time.sleep(2)
     
     if terminal_input:
-        # Click to focus
         terminal_input.click()
         time.sleep(1)
-        
-        # Clear any existing text
         terminal_input.clear()
         time.sleep(1)
-        
-        # Type command
         terminal_input.send_keys(command_to_run)
         time.sleep(1)
-        
-        # Press Enter
         terminal_input.send_keys(Keys.RETURN)
         print('Command sent to terminal')
-        
-        # Wait for command execution
         time.sleep(5)
         
-        # 8. Capture terminal output
         print('Step 7: Capturing output...')
         
-        # Try to find terminal output area
         output_selectors = [
             'div.xterm-screen',
             'div[data-cy="terminal-output"]',
@@ -197,9 +184,7 @@ try:
             print('Could not capture terminal output')
     else:
         print('ERROR: Could not find terminal input element')
-        print('Taking screenshots for debugging...')
     
-    # 9. Take final screenshot
     driver.save_screenshot('final_state.png')
     print('Final screenshot saved: final_state.png')
     
@@ -208,7 +193,6 @@ except Exception as e:
     import traceback
     traceback.print_exc()
     
-    # Save screenshot on error
     try:
         driver.save_screenshot('error_state.png')
         print('Error screenshot saved: error_state.png')
