@@ -61,4 +61,5 @@ jobs:
         name: replit-screenshots
         path: |
           *.png
+          *.html
         if-no-files-found: ignore
