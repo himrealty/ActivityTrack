@@ -12,10 +12,6 @@ on:
         required: true
         default: 'https://replit.com/@testhimrealty/WebBrowser'
 
-env:
-  REPLIT_EMAIL: ${{ secrets.REPLIT_EMAIL }}
-  REPLIT_PASSWORD: ${{ secrets.REPLIT_PASSWORD }}
-
 jobs:
   replit-automation:
     runs-on: ubuntu-latest
@@ -56,6 +52,8 @@ jobs:
         
     - name: Run Replit automation
       env:
+        REPLIT_EMAIL: ${{ secrets.REPLIT_EMAIL }}
+        REPLIT_PASSWORD: ${{ secrets.REPLIT_PASSWORD }}
         REPLIT_PROJECT_URL: ${{ github.event.inputs.replit_project_url }}
         COMMAND_TO_RUN: ${{ github.event.inputs.command_to_run }}
       run: python replit_automation.py
@@ -66,7 +64,5 @@ jobs:
       with:
         name: replit-screenshots
         path: |
-          login_page.png
-          login_page2.png
-          final_state.png
-          error_state.png
+          *.png
+        if-no-files-found: ignore
