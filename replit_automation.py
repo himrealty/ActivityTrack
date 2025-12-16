@@ -1,5 +1,6 @@
 import os
 import time
+import base64
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -15,7 +16,7 @@ print('Starting Replit automation...')
 chrome_options = Options()
 chrome_options.add_argument('--no-sandbox')
 chrome_options.add_argument('--disable-dev-shm-usage')
-chrome_options.add_argument('--headless')
+chrome_options.add_argument('--headless=new')  # New headless mode
 chrome_options.add_argument('--disable-gpu')
 chrome_options.add_argument('--window-size=1920,1080')
 chrome_options.add_argument('--disable-blink-features=AutomationControlled')
@@ -29,302 +30,342 @@ wait = WebDriverWait(driver, 20)
 
 driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-try:
-    # 1. Navigate to Replit login page
-    print('Step 1: Navigating to Replit login...')
-    driver.get('https://replit.com/login')
-    time.sleep(5)
-    
-    # Save initial screenshot
-    driver.save_screenshot('initial_page.png')
-    print('Initial screenshot saved')
-    
-    # 2. Handle cookie consent if present
-    try:
-        cookie_buttons = driver.find_elements(By.XPATH, '//button[contains(text(), "Accept") or contains(text(), "Got it") or contains(text(), "Agree")]')
-        if cookie_buttons:
-            cookie_buttons[0].click()
-            print('Cookie consent accepted')
-            time.sleep(2)
-    except:
-        print('No cookie consent found')
-    
-    # 3. Look for email/username field using multiple strategies
-    print('Step 2: Looking for login fields...')
-    
-    # Try to find if it's a different login flow (might be Google OAuth or other)
-    page_source = driver.page_source.lower()
-    
-    # Check for different login options
-    login_selectors = [
-        # New Replit login selectors
-        ('input[data-cy="login-email-input"]', 'data-cy email input'),
-        ('input[placeholder*="email" i]', 'email placeholder'),
-        ('input[placeholder*="username" i]', 'username placeholder'),
-        ('input[placeholder*="user" i]', 'user placeholder'),
-        ('input[autocomplete="email"]', 'autocomplete email'),
-        ('input[autocomplete="username"]', 'autocomplete username'),
-        ('input[type="text"][name*="email"]', 'text email'),
-        ('input[type="text"][name*="user"]', 'text user'),
-        ('input#email', 'email id'),
-        ('input#username', 'username id'),
-        ('input.login-email', 'login-email class'),
-        ('input.login-input', 'login-input class'),
-        ('input.form-input', 'form-input class'),
-        # More generic selectors
-        ('input[type="text"]:not([type="search"])', 'generic text input'),
-        ('input:not([type="hidden"])', 'any visible input')
-    ]
-    
-    email_field = None
-    password_field = None
-    
-    # First try to find email field
-    for selector, description in login_selectors:
+def save_screenshot(name):
+    """Save screenshot with timestamp"""
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    filename = f"{timestamp}_{name}"
+    driver.save_screenshot(filename)
+    print(f'Screenshot saved: {filename}')
+    return filename
+
+def find_and_click(selectors, description):
+    """Find and click element from list of selectors"""
+    for selector in selectors:
         try:
             elements = driver.find_elements(By.CSS_SELECTOR, selector)
             for elem in elements:
                 if elem.is_displayed() and elem.is_enabled():
-                    # Check if it's likely an email field
-                    elem_location = elem.location
-                    elem_size = elem.size
-                    # Save screenshot of found element
-                    driver.save_screenshot(f'found_element_{description.replace(" ", "_")}.png')
-                    email_field = elem
-                    print(f'Found potential email field: {description}')
-                    break
-            if email_field:
-                break
+                    elem.click()
+                    print(f'Clicked: {description} using selector: {selector}')
+                    return True
         except:
             continue
-    
-    if not email_field:
-        # Last resort: try to click any visible input
+    return False
+
+def find_and_send_keys(selectors, text, description):
+    """Find element and send keys"""
+    for selector in selectors:
         try:
-            all_inputs = driver.find_elements(By.TAG_NAME, 'input')
-            for inp in all_inputs:
-                if inp.is_displayed() and inp.is_enabled() and inp.get_attribute('type') != 'hidden':
-                    email_field = inp
-                    print('Found input field as last resort')
-                    break
+            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+            for elem in elements:
+                if elem.is_displayed() and elem.is_enabled():
+                    elem.click()
+                    time.sleep(0.5)
+                    elem.clear()
+                    elem.send_keys(text)
+                    print(f'Entered {description} using selector: {selector}')
+                    return elem
         except:
-            pass
+            continue
+    return None
+
+try:
+    # 1. Navigate to Replit login page
+    print('Step 1: Navigating to Replit login...')
+    driver.get('https://replit.com/login')
+    time.sleep(8)  # Give more time for page to load
     
-    if email_field:
-        email_field.click()
-        time.sleep(1)
-        email_field.clear()
-        email_field.send_keys(os.environ['REPLIT_EMAIL'])
-        print('Email entered')
-        time.sleep(2)
+    # Save initial screenshot
+    save_screenshot('initial_page.png')
+    
+    # Get page title and URL for debugging
+    print(f'Page title: {driver.title}')
+    print(f'Current URL: {driver.current_url}')
+    
+    # 2. Check if we're already logged in or redirected
+    if 'dashboard' in driver.current_url or '@' in driver.current_url:
+        print('Already logged in or on dashboard')
+    else:
+        print('Step 2: Attempting login...')
         
-        # Try to find and click Continue/Next button
-        continue_buttons = [
-            'button[type="submit"]',
-            'button:contains("Continue")',
-            'button:contains("Next")',
-            'button[data-cy*="continue"]',
-            'button[data-cy*="next"]'
+        # Strategy 1: Look for common login patterns
+        # Try multiple login approaches
+        
+        # Approach A: Direct email/password form
+        email_selectors = [
+            'input[autocomplete="email"]',
+            'input[autocomplete="username"]',
+            'input[type="email"]',
+            'input[name="email"]',
+            'input[name="username"]',
+            'input[placeholder*="email" i]',
+            'input[placeholder*="username" i]',
+            'input[placeholder*="user" i]',
+            'input#email',
+            'input#username',
+            'input[data-cy="login-email"]',
+            'input[data-testid="login-email"]',
+            'input.login-input',
+            'input.form-input',
+            'input[type="text"]:not([type="search"]):not([aria-label*="search"])'
         ]
         
-        for button_selector in continue_buttons:
-            try:
-                buttons = driver.find_elements(By.CSS_SELECTOR, button_selector)
-                for btn in buttons:
-                    if btn.is_displayed():
-                        btn.click()
-                        print('Clicked Continue/Next button')
-                        time.sleep(3)
-                        break
-            except:
-                continue
+        email_field = find_and_send_keys(email_selectors, os.environ['REPLIT_EMAIL'], 'email')
         
-        # Now look for password field
-        print('Looking for password field...')
-        password_selectors = [
-            'input[type="password"]',
-            'input[data-cy="login-password-input"]',
-            'input[placeholder*="password" i]',
-            'input[autocomplete="current-password"]',
-            'input#password',
-            'input.password-input'
-        ]
-        
-        for selector in password_selectors:
-            try:
-                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                for elem in elements:
-                    if elem.is_displayed():
-                        password_field = elem
-                        print('Found password field')
-                        break
-                if password_field:
-                    break
-            except:
-                continue
-        
-        if password_field:
-            password_field.click()
-            time.sleep(1)
-            password_field.clear()
-            password_field.send_keys(os.environ['REPLIT_PASSWORD'])
-            print('Password entered')
-            time.sleep(2)
-            
-            # Submit login
-            submit_selectors = [
+        if email_field:
+            # Look for continue/next button after email
+            continue_selectors = [
                 'button[type="submit"]',
-                'button:contains("Sign in")',
-                'button:contains("Log in")',
-                'button[data-cy*="login"]',
-                'button[data-cy*="submit"]'
+                'button:contains("Continue")',
+                'button:contains("Next")',
+                'button[data-cy*="continue"]',
+                'button[data-cy*="next"]',
+                'button[aria-label*="Continue" i]',
+                'button[aria-label*="Next" i]'
             ]
             
-            for selector in submit_selectors:
+            find_and_click(continue_selectors, 'continue button')
+            time.sleep(3)
+            save_screenshot('after_email.png')
+            
+            # Now look for password
+            password_selectors = [
+                'input[type="password"]',
+                'input[autocomplete="current-password"]',
+                'input[name="password"]',
+                'input#password',
+                'input[placeholder*="password" i]',
+                'input[data-cy="login-password"]',
+                'input[data-testid="login-password"]'
+            ]
+            
+            password_field = find_and_send_keys(password_selectors, os.environ['REPLIT_PASSWORD'], 'password')
+            
+            if password_field:
+                # Submit login
+                submit_selectors = [
+                    'button[type="submit"]',
+                    'button:contains("Sign in")',
+                    'button:contains("Log in")',
+                    'button[data-cy*="login"]',
+                    'button[data-cy*="submit"]',
+                    'button[aria-label*="Sign in" i]'
+                ]
+                
+                find_and_click(submit_selectors, 'sign in button')
+            else:
+                # Maybe it's OAuth or single sign-on
+                print('Password field not found, might be OAuth flow')
+                email_field.send_keys(Keys.RETURN)
+        else:
+            # Approach B: Maybe it's a different login flow
+            print('Trying alternative login approach...')
+            
+            # Look for "Continue with Google" or other OAuth buttons
+            oauth_selectors = [
+                'button:contains("Google")',
+                'button:contains("GitHub")',
+                'button:contains("Gitlab")',
+                'button[data-cy*="google"]',
+                'button[data-cy*="github"]',
+                'div[data-cy*="google"]',
+                'div[data-cy*="github"]'
+            ]
+            
+            for selector in oauth_selectors:
                 try:
                     buttons = driver.find_elements(By.CSS_SELECTOR, selector)
                     for btn in buttons:
                         if btn.is_displayed():
-                            btn.click()
-                            print('Clicked Sign in button')
-                            time.sleep(3)
-                            break
-                    break
+                            print(f'Found OAuth button: {selector}')
+                            # For now, we can't handle OAuth in automation
+                            # Save screenshot and exit
+                            save_screenshot('oauth_detected.png')
+                            raise Exception('OAuth login detected. Manual login required.')
                 except:
                     continue
-        else:
-            # If no password field found, maybe it's OAuth or different flow
-            print('No password field found, trying Enter key')
-            email_field.send_keys(Keys.RETURN)
-            time.sleep(3)
+            
+            # Approach C: Try to find any form and submit with credentials
+            print('Trying form detection...')
+            all_forms = driver.find_elements(By.TAG_NAME, 'form')
+            if all_forms:
+                print(f'Found {len(all_forms)} form(s) on page')
+                for i, form in enumerate(all_forms):
+                    try:
+                        # Get all inputs in form
+                        inputs = form.find_elements(By.TAG_NAME, 'input')
+                        print(f'Form {i} has {len(inputs)} input(s)')
+                        
+                        # Try to fill email/password if we find matching inputs
+                        email_input = None
+                        password_input = None
+                        
+                        for inp in inputs:
+                            inp_type = inp.get_attribute('type') or ''
+                            inp_name = inp.get_attribute('name') or ''
+                            inp_id = inp.get_attribute('id') or ''
+                            
+                            if 'email' in inp_type or 'email' in inp_name or 'email' in inp_id or 'username' in inp_name:
+                                email_input = inp
+                            elif 'password' in inp_type or 'password' in inp_name or 'password' in inp_id:
+                                password_input = inp
+                        
+                        if email_input and password_input:
+                            email_input.click()
+                            email_input.send_keys(os.environ['REPLIT_EMAIL'])
+                            time.sleep(1)
+                            password_input.click()
+                            password_input.send_keys(os.environ['REPLIT_PASSWORD'])
+                            time.sleep(1)
+                            
+                            # Try to submit
+                            form.submit()
+                            print('Form submitted with credentials')
+                            break
+                            
+                    except Exception as e:
+                        print(f'Error with form {i}: {e}')
+                        continue
+    
+    # 3. Wait for login and check
+    print('Step 3: Waiting for login completion...')
+    time.sleep(10)
+    save_screenshot('after_login_attempt.png')
+    
+    # Check if login was successful
+    if 'login' not in driver.current_url and 'signin' not in driver.current_url:
+        print('Login appears successful')
     else:
-        print('ERROR: Could not find any login input field')
-        driver.save_screenshot('no_login_field.png')
-        raise Exception('No login field found')
+        print('Still on login page, login may have failed')
+        # Try one more time with direct credentials in URL (not recommended for production)
+        print('Trying direct project access...')
     
-    # 4. Wait for login to complete and check if successful
-    print('Step 3: Waiting for login to complete...')
-    time.sleep(8)
-    
-    # Check if login was successful by looking for user avatar or dashboard elements
-    driver.save_screenshot('after_login.png')
-    
-    # 5. Navigate to specific project
+    # 4. Navigate to specific project
     print('Step 4: Navigating to project...')
     project_url = os.environ['REPLIT_PROJECT_URL']
     driver.get(project_url)
-    time.sleep(8)
-    driver.save_screenshot('project_page.png')
+    time.sleep(10)
+    save_screenshot('project_page.png')
     
-    # 6. Try to find and interact with terminal
-    print('Step 5: Looking for terminal/shell...')
+    print(f'Project page title: {driver.title}')
+    print(f'Project page URL: {driver.current_url}')
     
-    # Try Run button
-    run_button_found = False
+    # 5. Try to find and click Run button
+    print('Step 5: Looking for Run button...')
+    
     run_button_selectors = [
         'button:contains("Run")',
         'button[data-cy="run-button"]',
+        'button[aria-label*="Run" i]',
+        'div[data-cy="run-button"]',
         'button.run-button',
-        '[aria-label*="Run" i]',
-        'button[title*="Run" i]'
+        'button[title*="Run" i]',
+        'button:contains("▶")',  # Play symbol
+        'button:contains("▷")'   # Another play symbol
     ]
     
-    for selector in run_button_selectors:
-        try:
-            buttons = driver.find_elements(By.CSS_SELECTOR, selector)
-            for btn in buttons:
-                if btn.is_displayed():
-                    btn.click()
-                    print('Clicked Run button')
-                    run_button_found = True
-                    time.sleep(5)
-                    break
-            if run_button_found:
-                break
-        except:
-            continue
+    run_clicked = find_and_click(run_button_selectors, 'Run button')
     
-    if not run_button_found:
-        print('Run button not found or project already running')
+    if run_clicked:
+        print('Run button clicked')
+        time.sleep(8)
+        save_screenshot('after_run.png')
+    else:
+        print('Run button not found or already running')
     
-    # 7. Find terminal input and execute command
-    print('Step 6: Looking for terminal input...')
+    # 6. Execute command in terminal
+    print('Step 6: Executing command...')
     command_to_run = os.environ['COMMAND_TO_RUN']
-    print(f'Command to execute: {command_to_run}')
+    print(f'Command: {command_to_run}')
     
-    terminal_input = None
+    # Try to find terminal/console area
     terminal_selectors = [
         'div[contenteditable="true"]',
         '.xterm-helper-textarea',
-        'textarea.xterm-helper-textarea',
-        'div.xterm-textarea',
-        'pre.xterm-helper-textarea',
-        '.terminal-input',
-        '[data-cy="terminal-input"]',
-        'div[class*="terminal"]',
-        'div[class*="xterm"]',
         'textarea',
-        'input[type="text"]'
+        'input[type="text"]',
+        'div[class*="terminal"]',
+        'div[class*="console"]',
+        'div[class*="xterm"]',
+        'pre[class*="xterm"]',
+        '[data-cy*="terminal"]',
+        '[data-testid*="terminal"]'
     ]
     
+    terminal_found = False
     for selector in terminal_selectors:
         try:
             elements = driver.find_elements(By.CSS_SELECTOR, selector)
             for elem in elements:
                 if elem.is_displayed() and elem.is_enabled():
-                    terminal_input = elem
-                    print(f'Found terminal input with selector: {selector}')
-                    driver.save_screenshot(f'terminal_found_{selector.replace("[", "").replace("]", "").replace(".", "")}.png')
-                    break
-            if terminal_input:
+                    print(f'Found terminal element: {selector}')
+                    
+                    # Try to focus and send command
+                    try:
+                        elem.click()
+                        time.sleep(1)
+                        
+                        # Different methods to send text
+                        try:
+                            elem.clear()
+                        except:
+                            pass
+                        
+                        elem.send_keys(command_to_run)
+                        time.sleep(1)
+                        elem.send_keys(Keys.RETURN)
+                        terminal_found = True
+                        print('Command sent to terminal')
+                        break
+                    except Exception as e:
+                        print(f'Error sending to terminal: {e}')
+                        continue
+            if terminal_found:
                 break
         except:
             continue
     
-    if terminal_input:
-        terminal_input.click()
-        time.sleep(2)
-        
-        # Try different ways to input text
+    if not terminal_found:
+        print('Could not find terminal input')
+        # Try JavaScript injection as last resort
         try:
-            terminal_input.clear()
+            driver.execute_script(f"""
+                var event = new KeyboardEvent('keydown', {{key: '{command_to_run}', code: 'KeyT'}});
+                document.dispatchEvent(event);
+                console.log('Command attempted via JS: {command_to_run}');
+            """)
+            print('Command attempted via JavaScript')
         except:
-            pass
-        
-        terminal_input.send_keys(command_to_run)
-        time.sleep(1)
-        terminal_input.send_keys(Keys.RETURN)
-        print('Command sent to terminal')
-        
-        # Wait for output
-        time.sleep(8)
-        
-        # 8. Capture any visible output
-        print('Step 7: Capturing output...')
-        driver.save_screenshot('after_command.png')
-        
-        # Try to get page source which might contain output
-        page_text = driver.page_source
-        if len(page_text) > 1000:  # If there's substantial content
-            # Extract visible text
-            all_text = driver.find_element(By.TAG_NAME, 'body').text
-            print('=' * 50)
-            print('PAGE TEXT CONTENT:')
-            print('=' * 50)
-            # Show last 2000 chars which might contain terminal output
-            print(all_text[-2000:] if len(all_text) > 2000 else all_text)
-            print('=' * 50)
-        else:
-            print('Page seems empty, command may not have executed')
-        
-    else:
-        print('WARNING: Could not find terminal input')
-        print('Taking full page screenshot for debugging')
+            print('JavaScript injection also failed')
     
-    # 9. Final screenshot
-    driver.save_screenshot('final_state.png')
-    print('Final screenshot saved: final_state.png')
-    print('Check uploaded screenshots for debugging')
+    # 7. Wait and capture output
+    print('Step 7: Capturing output...')
+    time.sleep(8)
+    
+    # Get all visible text on page
+    try:
+        body_text = driver.find_element(By.TAG_NAME, 'body').text
+        if body_text:
+            print('=' * 60)
+            print('PAGE TEXT (last 3000 characters):')
+            print('=' * 60)
+            # Show last part which might contain terminal output
+            output = body_text[-3000:] if len(body_text) > 3000 else body_text
+            print(output)
+            print('=' * 60)
+            
+            # Save text to file
+            with open('page_output.txt', 'w', encoding='utf-8') as f:
+                f.write(body_text)
+            print('Page text saved to page_output.txt')
+        else:
+            print('No text content found on page')
+    except:
+        print('Could not extract page text')
+    
+    # Final screenshot
+    save_screenshot('final_result.png')
+    print('Automation completed successfully!')
     
 except Exception as e:
     print(f'ERROR during automation: {str(e)}')
@@ -332,21 +373,20 @@ except Exception as e:
     traceback.print_exc()
     
     try:
-        driver.save_screenshot('error_state.png')
-        print('Error screenshot saved: error_state.png')
+        save_screenshot('error_final.png')
     except:
-        print('Could not save error screenshot')
+        print('Could not save final error screenshot')
     
-    # Try to save page source for debugging
+    # Save current page source
     try:
-        with open('page_source.html', 'w', encoding='utf-8') as f:
+        with open('final_page_source.html', 'w', encoding='utf-8') as f:
             f.write(driver.page_source)
-        print('Page source saved: page_source.html')
+        print('Final page source saved')
     except:
-        print('Could not save page source')
+        print('Could not save final page source')
     
     raise
 
 finally:
     driver.quit()
-    print('Automation completed.')
+    print('Browser closed. Automation finished.')
