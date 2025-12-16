@@ -1,0 +1,293 @@
+name: Replit Browser Automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      command_to_run:
+        description: 'Command to execute in Replit shell'
+        required: true
+        default: 'ls -la'
+      replit_project_url:
+        description: 'Replit project URL'
+        required: true
+        default: 'https://replit.com/@testhimrealty/WebBrowser'
+
+env:
+  REPLIT_EMAIL: ${{ secrets.REPLIT_EMAIL }}
+  REPLIT_PASSWORD: ${{ secrets.REPLIT_PASSWORD }}
+
+jobs:
+  replit-automation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install selenium webdriver-manager
+        
+    - name: Install Chrome
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg
+        wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+        google-chrome --version
+        
+    - name: Install ChromeDriver
+      run: |
+        CHROME_VERSION=$(google-chrome --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION")
+        wget -q "https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip"
+        unzip chromedriver_linux64.zip
+        sudo mv chromedriver /usr/local/bin/
+        sudo chmod +x /usr/local/bin/chromedriver
+        chromedriver --version
+        
+    - name: Run Replit automation
+      run: |
+        python -c "
+import os
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+
+print('Starting Replit automation...')
+
+# Setup Chrome options for GitHub Actions
+chrome_options = Options()
+chrome_options.add_argument('--no-sandbox')
+chrome_options.add_argument('--disable-dev-shm-usage')
+chrome_options.add_argument('--headless')
+chrome_options.add_argument('--disable-gpu')
+chrome_options.add_argument('--window-size=1920,1080')
+chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+chrome_options.add_experimental_option('useAutomationExtension', False)
+
+driver = webdriver.Chrome(options=chrome_options)
+driver.execute_script(\"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})\")
+
+try:
+    # 1. Navigate to Replit login page
+    print('Step 1: Navigating to Replit login...')
+    driver.get('https://replit.com/login')
+    time.sleep(3)
+    
+    # 2. Handle cookie consent if present
+    try:
+        cookie_button = driver.find_element(By.XPATH, '//button[contains(text(), \"Accept\") or contains(text(), \"Got it\")]')
+        cookie_button.click()
+        print('Cookie consent accepted')
+        time.sleep(1)
+    except:
+        print('No cookie consent found')
+    
+    # 3. Fill login form
+    print('Step 2: Filling login credentials...')
+    
+    # Find email field using multiple selectors
+    try:
+        email_field = driver.find_element(By.NAME, 'email')
+    except:
+        try:
+            email_field = driver.find_element(By.CSS_SELECTOR, 'input[type=\"email\"]')
+        except:
+            try:
+                email_field = driver.find_element(By.CSS_SELECTOR, 'input[name=\"username\"]')
+            except:
+                print('Could not find email field, taking screenshot')
+                driver.save_screenshot('login_page.png')
+                raise
+    
+    email_field.clear()
+    email_field.send_keys(os.environ['REPLIT_EMAIL'])
+    time.sleep(1)
+    
+    # Find password field
+    try:
+        password_field = driver.find_element(By.NAME, 'password')
+    except:
+        try:
+            password_field = driver.find_element(By.CSS_SELECTOR, 'input[type=\"password\"]')
+        except:
+            print('Could not find password field')
+            driver.save_screenshot('login_page2.png')
+            raise
+    
+    password_field.clear()
+    password_field.send_keys(os.environ['REPLIT_PASSWORD'])
+    time.sleep(1)
+    
+    # 4. Submit login form
+    print('Step 3: Submitting login form...')
+    try:
+        login_button = driver.find_element(By.XPATH, '//button[contains(text(), \"Sign in\") or contains(text(), \"Log in\") or @type=\"submit\"]')
+        login_button.click()
+    except:
+        password_field.send_keys(Keys.RETURN)
+    
+    time.sleep(5)  # Wait for login to complete
+    
+    # 5. Navigate to specific project
+    print('Step 4: Navigating to project...')
+    project_url = os.environ.get('REPLIT_PROJECT_URL') or '${{ github.event.inputs.replit_project_url }}'
+    driver.get(project_url)
+    time.sleep(5)
+    
+    # 6. Open shell/terminal (Replit's interface)
+    print('Step 5: Opening terminal/shell...')
+    
+    # Look for Run button to start the project
+    try:
+        run_button = driver.find_element(By.XPATH, '//button[contains(text(), \"Run\")]')
+        run_button.click()
+        print('Clicked Run button')
+        time.sleep(5)
+    except:
+        print('Run button not found or project already running')
+    
+    # 7. Find terminal input and execute command
+    print('Step 6: Executing command in terminal...')
+    command_to_run = os.environ.get('COMMAND_TO_RUN') or '${{ github.event.inputs.command_to_run }}'
+    print(f'Command to execute: {command_to_run}')
+    
+    # Wait for terminal to be ready and find input
+    terminal_input = None
+    for attempt in range(10):
+        try:
+            # Try multiple selectors for Replit's terminal input
+            selectors = [
+                'div[data-cy=\"terminal-input\"]',
+                'textarea.terminal-input',
+                'div.xterm-helper-textarea',
+                'div[contenteditable=\"true\"]',
+                'pre.xterm-helper-textarea',
+                '.xterm textarea'
+            ]
+            
+            for selector in selectors:
+                try:
+                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    for elem in elements:
+                        if elem.is_displayed() and elem.is_enabled():
+                            terminal_input = elem
+                            print(f'Found terminal input with selector: {selector}')
+                            break
+                    if terminal_input:
+                        break
+                except:
+                    continue
+        
+        except Exception as e:
+            print(f'Attempt {attempt + 1}: {str(e)}')
+        
+        if terminal_input:
+            break
+        time.sleep(2)
+    
+    if terminal_input:
+        # Click to focus
+        terminal_input.click()
+        time.sleep(1)
+        
+        # Clear any existing text
+        terminal_input.clear()
+        time.sleep(1)
+        
+        # Type command
+        terminal_input.send_keys(command_to_run)
+        time.sleep(1)
+        
+        # Press Enter
+        terminal_input.send_keys(Keys.RETURN)
+        print('Command sent to terminal')
+        
+        # Wait for command execution
+        time.sleep(5)
+        
+        # 8. Capture terminal output
+        print('Step 7: Capturing output...')
+        
+        # Try to find terminal output area
+        output_selectors = [
+            'div.xterm-screen',
+            'div[data-cy=\"terminal-output\"]',
+            '.terminal-output',
+            '.xterm-viewport',
+            'div[class*=\"xterm\"]'
+        ]
+        
+        terminal_output = None
+        for selector in output_selectors:
+            try:
+                elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                for elem in elements:
+                    if elem.is_displayed():
+                        terminal_output = elem
+                        print(f'Found output with selector: {selector}')
+                        break
+            except:
+                continue
+        
+        if terminal_output:
+            output_text = terminal_output.text
+            print('=' * 50)
+            print('TERMINAL OUTPUT:')
+            print('=' * 50)
+            print(output_text if output_text else '(No output visible)')
+            print('=' * 50)
+        else:
+            print('Could not capture terminal output')
+    else:
+        print('ERROR: Could not find terminal input element')
+        print('Taking screenshots for debugging...')
+    
+    # 9. Take final screenshot
+    driver.save_screenshot('final_state.png')
+    print('Final screenshot saved: final_state.png')
+    
+except Exception as e:
+    print(f'ERROR during automation: {str(e)}')
+    import traceback
+    traceback.print_exc()
+    
+    # Save screenshot on error
+    try:
+        driver.save_screenshot('error_state.png')
+        print('Error screenshot saved: error_state.png')
+    except:
+        print('Could not save error screenshot')
+    
+    raise
+
+finally:
+    driver.quit()
+    print('Automation completed.')
+"
+        
+    - name: Upload screenshots
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: replit-screenshots
+        path: |
+          login_page.png
+          login_page2.png
+          final_state.png
+          error_state.png
