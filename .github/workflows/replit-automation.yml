@@ -54,12 +54,13 @@ jobs:
         COMMAND_TO_RUN: ${{ github.event.inputs.command_to_run }}
       run: python replit_automation.py
         
-    - name: Upload screenshots
+    - name: Upload screenshots and logs
       uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: replit-screenshots
+        name: replit-automation-results
         path: |
           *.png
           *.html
+          *.txt
         if-no-files-found: ignore
